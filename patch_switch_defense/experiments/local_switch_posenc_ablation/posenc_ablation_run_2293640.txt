@@ -1,0 +1,21 @@
+calibration: 100개, evaluation: 150개 (system_comparison과 동일 split)
+  Device: CUDA (NVIDIA GeForce RTX 4090)
+  시도: vit_base_patch16_224.augreg2_in21k_ft_in1k
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  ✓ 로드 성공: vit_base_patch16_224.augreg2_in21k_ft_in1k  (P=16, tokens=196, params=86.6M)
+  시도: vit_base_patch8_224.augreg2_in21k_ft_in1k
+  ✓ 로드 성공: vit_base_patch8_224.augreg2_in21k_ft_in1k  (P=8, tokens=784, params=86.6M)
+  Dataset: ImageNet-1k val | samples=250 | classes=1000
+[posenc] calibration patch embedding 평균 노름=6.758, quadrant 벡터 노름=0.676 (= 평균 노름의 10%)
+어댑터 2종 피팅 완료 (baseline / +quadrant posenc)
+
+[PatchFool on P16] 공격 생성 중 (eval 150개, 20개씩)...
+
+=== 복원율 (공격 성공 112/150 기준, 같은 공격 이미지) ===
+  baseline (posenc 없음)   : 101/112 = 0.9018  95% CI [0.8327, 0.9443]
+  +quadrant posenc (옵션 A) : 101/112 = 0.9018  95% CI [0.8327, 0.9443]
+  delta: +0.0000
+
+[참고] system_comparison(n=250, seed=42)의 기존 baseline 복원율: 89.4% (101/113, 95% CI [0.8235, 0.9382]) — 이번 실행의 baseline(0.9018)과 비교해 재현성 확인용
+
+Saved: /home/jooyumm/ViT_robust/ViT_patchSwitch/results/local_switch_posenc_ablation/posenc_ablation.npz

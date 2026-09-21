@@ -1,0 +1,32 @@
+/home/jooyumm/.local/lib/python3.9/site-packages/torch/cuda/__init__.py:182: UserWarning: CUDA initialization: CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start. Setting the available devices to be zero. (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:109.)
+  return torch._C._cuda_getDeviceCount() > 0
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+/home/jooyumm/.local/lib/python3.9/site-packages/torch/utils/data/dataloader.py:666: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  warnings.warn(warn_msg)
+  Device: CPU
+  시도: vit_base_patch16_224.augreg2_in21k_ft_in1k
+  ✓ 로드 성공: vit_base_patch16_224.augreg2_in21k_ft_in1k  (P=16, tokens=196, params=86.6M)
+  시도: vit_base_patch8_224.augreg2_in21k_ft_in1k
+  ✓ 로드 성공: vit_base_patch8_224.augreg2_in21k_ft_in1k  (P=8, tokens=784, params=86.6M)
+  Dataset: ImageNet-1k val | samples=100 | classes=1000
+어댑터 피팅 완료 (calibration seed=42, n=100, 공격 표본 seed=123과 분리됨)
+  Dataset: ImageNet-1k val | samples=50 | classes=1000
+[참고] P16 clean acc=0.840  local-swap(위치=clean attention top-1) clean acc=0.840  둘 다 원래 맞춘 이미지: 42/50
+
+[A. 나이브 baseline] P16 단독 공격 생성 중...
+  P16만 공격: P16 속음 40/42, 그 중 local-swap까지 같이 속음(전이) 1/40 = 0.025
+
+[B. Joint attack] P16+local-swap 동시 공격 생성 중...
+
+=== Joint attack 결과 (원래 둘 다 맞춘 42개 기준) ===
+  P16만 속음(local-swap은 여전히 맞음): 0/42
+  local-swap만 속음(P16은 여전히 맞음): 34/42
+  둘 다 속음(방어 완전 무력화): 7/42 = 0.167
+  (참고, §7: P16+P8 전체 joint = 18.4%, §8: 정렬된 P16-A/B joint = 74.4%(페어링))
+  (참고, 나이브 전이 위에서: 0.025)
+
+=== 탐지기 (calibration 임계값 0.5567 그대로) ===
+  joint attack 50개 중 flag 비율: 0.040
+  '둘 다 속은'(완전 무력화) 중 그래도 탐지는 된 것: 0/7
+
+Saved: /home/jooyumm/ViT_robust/ViT_patchSwitch/results/06_local_token_subdivision/17_local_swap_joint_attack/17_local_swap_joint_attack_n50.npz

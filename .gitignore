@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.so
+.ipynb_checkpoints/
+.DS_Store
+*.pth
+*.pt
+*.ckpt
+
+# Backups of each project's previous standalone git repo (pre-monorepo).
+# Kept on disk for history recovery, intentionally not part of this repo.
+.git.bak/
+
+# Local, machine-specific Claude Code settings (not meant to be shared).
+.claude/

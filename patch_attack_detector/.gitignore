@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.so
+.ipynb_checkpoints/
+.DS_Store
+*.pth
+*.pt
+*.ckpt

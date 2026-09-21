@@ -1,0 +1,35 @@
+calibration: 100개 (인덱스 0~99), evaluation: 150개 (인덱스 100~249)
+  Device: CUDA (NVIDIA GeForce RTX 4090)
+  시도: vit_base_patch16_224.augreg2_in21k_ft_in1k
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+  ✓ 로드 성공: vit_base_patch16_224.augreg2_in21k_ft_in1k  (P=16, tokens=196, params=86.6M)
+  시도: vit_base_patch8_224.augreg2_in21k_ft_in1k
+  ✓ 로드 성공: vit_base_patch8_224.augreg2_in21k_ft_in1k  (P=8, tokens=784, params=86.6M)
+  Dataset: ImageNet-1k val | samples=250 | classes=1000
+[참고] P16 clean acc: 0.852  P8 clean acc: 0.892
+어댑터 피팅 완료 (calibration 100개 clean 이미지 기준)
+[sanity] 배선 검증 max diff = 0.000000 (0에 가까워야 정상)
+
+[PatchFool on P16] 공격 생성 중 (총 250개, 20개씩 나눠서)...
+
+=== 임계값 (calibration 100개로만 도출) === threshold=0.5116  J=0.600
+
+=== 탐지 (evaluation 150개, held-out, 두 방어 공통) ===
+  FPR=0.133 (20/150)  95% CI [0.088, 0.197]
+  recall=0.727 (109/150)  95% CI [0.650, 0.792]
+
+=== (a) 무조건 복원율 (flag 여부 무관, 공격 성공 113/150 기준) ===
+  all_switch  : 109/113 = 0.965  95% CI [0.913, 0.986]
+  local_switch: 101/113 = 0.894  95% CI [0.824, 0.938]
+
+=== (b) 시스템 정확도 (evaluation 150개 전체, 공격 이미지 기준) ===
+  P16 단독(무방어): 0.087
+  all_switch 시스템  : 0.660
+  local_switch 시스템: 0.653
+
+=== (c) clean 오탐 비용 (무조건 방어 적용 시 정확도 변화) ===
+  P16 clean acc          : 0.840
+  all_switch 적용 시     : 0.880  (delta +0.040)
+  local_switch 적용 시   : 0.847  (delta +0.007)
+
+Saved: /home/jooyumm/ViT_robust/ViT_patchSwitch/results/system_comparison/system_comparison_n250.npz

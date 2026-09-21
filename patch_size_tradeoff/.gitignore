@@ -1,0 +1,67 @@
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# =========================
+# Jupyter Notebook
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Environment variables
+# =========================
+.env
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+
+# =========================
+# Project-specific (IMPORTANT)
+# =========================
+
+# dataset (VERY IMPORTANT)
+data/
+dataset/
+datasets/
+
+# outputs / results / logs
+results/
+outputs/
+logs/
+log/
+
+# model checkpoints
+*.pth
+*.pt
+*.ckpt
+
+# attention / visualization outputs
+attention_results/
+visualization/
+figures/
+
+# =========================
+# Cache
+# =========================
+*.cache
+.cache/
