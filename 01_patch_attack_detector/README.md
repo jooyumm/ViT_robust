@@ -79,22 +79,23 @@ ViT_robust/
                                     197개 쿼리 전부가 거길 봐야 한다는 가설을 검증. 03과
                                     반대 방향(고정 키, 가변 쿼리) (npz만 읽음, GPU 불필요)
 
-  ground_truth/                  "공격이 실제로 어디를 건드렸는가"(픽셀 diff)를 관측된
-                                  attention/탐지 결과와 자동 대조하는 시스템. characterization
+  ground_truth/                  "공격이 실제로 어디를 건드렸는가"(픽셀 diff)만 확정하는
+                                  시스템 — attention이나 탐지기 출력과 비교하는 건 여기 안
+                                  한다(그건 이 GT를 갖다 쓰는 별도의 나중 단계). characterization
                                   전용이 아니라 이 프로젝트 최상위에 둬서 앞으로 detector/
                                   자체를 테스트할 때도 그대로 재사용한다.
     gt_lib.py                      저수준: clean/adv 픽셀 diff로 "어느 patch를 얼마나
                                     건드렸는지"(196차원 coverage)를 계산하는 ground truth 함수
-    gt_overlay_plot.py              GT(노란 박스) vs 관측된 attention argmax(하늘색 박스)를
-                                    원본/공격/diff 이미지 위에 겹쳐 그리는 그림 함수
-    check_attention_vs_gt.py       실행 스크립트. characterization의 00_extract_attention.py가
+    gt_plot.py                      GT로 확정된 patch(노란 박스, 겹침 %)를 원본/공격/diff
+                                    이미지 위에 그리는 그림 함수 — attention 정보 없음
+    visualize_gt.py                실행 스크립트. characterization의 00_extract_attention.py가
                                     저장한 npz(gt_coverage/repr_images)를 읽어 대표 이미지
-                                    전부에 대해 GT-vs-attention 일치율을 표+그림으로 저장
+                                    5장 x 2개 공격 전부의 GT를 표+그림으로 저장
                                     (npz만 읽음, GPU 불필요)
     results/
-      gt_check_L12_n100.md          일치율 표
-      patchfool/img{0..4}_L12.png   공격별로 나눈 GT-vs-attention 오버레이 그림
-      lavan/img{0..4}_L12.png
+      gt_summary_n100.md            대표 이미지별 GT patch(겹침 %) 표
+      patchfool/img{0..4}.png       공격별로 나눈 GT 그림
+      lavan/img{0..4}.png
 
   results/
     layer_sweep/                위 실험의 결과물 (npz/png/md)
@@ -257,7 +258,7 @@ block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마�
    0.6~0.8)를 만든다 — 이게 layer_sweep에서 recall이 72.7%에 그치고 100%가 아닌 이유와
    같은 그림이다(공격이 성공적으로 attention을 왜곡한 이미지와 아닌 이미지가 섞여 있음).
 3. **L=12의 쏠림은 특정 헤드 하나의 이상치가 아니라 대부분의 헤드에서 동시에 나타난다.**
-   [`results/characterization/01_head_variability_L5_L12.png`](results/characterization/01_head_variability_L5_L12.png)
+   [`results/characterization/01_head_variability_L5_L12_img0.png`](results/characterization/01_head_variability_L5_L12_img0.png)
    에서 L=12는 12개 헤드 중 대다수가 PatchFool에서 clean/LaVAN보다 높게 나오고(헤드 5개
    이상이 0.6 이상), L=5는 반대로 세 그룹이 헤드별로도 거의 구분되지 않는다 — L=5의 집계
    상승(layer_sweep에서 봤던 국소 peak)은 공격 신호가 아니라 자연적인 레이어 특성일
@@ -311,33 +312,52 @@ attention을 특정 patch로 강하게 끌어당긴다)이 맞다면, CLS뿐 아
 존재하는 현상이고, PatchFool은 그 자연 sink를 4.7배(0.11→0.51)까지 증폭시켜 거의 모든
 토큰을 하나로 결집시킨다고 해석할 수 있다.)
 
-## GT 검증 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 자동 대조
+## GT 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
 
 위 patch 17 결과까지는 image 0 한 장을 놓고 clean/adv를 직접 diff하는 일회성 스크립트로
 확인했다. 이걸 매번 손으로 하지 않도록, **공격이 실제로 어느 patch를 얼마나 건드렸는지를
-pixel diff로 계산한 ground truth**를 파이프라인에 내장했다. 이 시스템은 characterization
-전용이 아니라 `01_patch_attack_detector/ground_truth/`라는 프로젝트 최상위 폴더로
-뺐다 — 탐지기(`detector/`) 자체를 테스트할 때도 "탐지가 가리키는 위치 vs 실제 공격
-위치"를 그대로 재사용할 수 있어서다:
+pixel diff로 계산한 ground truth**를 파이프라인에 내장했다. `ground_truth/`의 역할은
+딱 이것뿐이다 — attention이나 탐지기 출력과 비교하는 로직은 여기 없다(그건 이 GT를
+가져다 쓰는 별도의 나중 분석). characterization 전용이 아니라
+`01_patch_attack_detector/ground_truth/`라는 프로젝트 최상위 폴더에 둬서, 앞으로
+탐지기(`detector/`) 자체를 테스트할 때도("탐지가 가리키는 위치 vs 실제 공격 위치") 같은
+GT를 그대로 재사용한다:
 
 - `ground_truth/gt_lib.py`의 `gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서
   (추정 아님) 196개 patch 각각에서 실제로 바뀐 픽셀 비율(0~1)을 계산. PatchFool은 정확히
   patch 1개만 1.0, 나머지는 0. LaVAN은 16px 그리드에 정렬 안 된 위치에 놓이므로 여러
   patch에 걸쳐 부분 비율로 나뉜다.
 - `experiments/characterization/00_extract_attention.py`가 대표 이미지 **5장**(기존
-  2장에서 늘림)에 대해 원본 픽셀(`repr_images`)과 `gt_coverage`를 npz에 같이 저장 —
+  2장에서 늘림 — 이 5장은 characterization의 다른 스크립트들도 전부 같이 쓰는 프로젝트
+  공통 기준 예시다)에 대해 원본 픽셀(`repr_images`)과 `gt_coverage`를 npz에 같이 저장 —
   재실행 없이 언제든 "원본 vs 공격 이미지"를 다시 볼 수 있는 재료.
-- `ground_truth/check_attention_vs_gt.py`: 이 GT와 그 레이어의 관측된 attention
-  argmax(`argmax_col_avg`)를 대표 이미지 5장 x 2개 공격(PatchFool/LaVAN) 전체에 대해
-  자동 대조하고, 이미지마다 [clean | adv | diff 히트맵]에 GT patch(노란 박스)와 관측
-  argmax(하늘색 박스)를 겹쳐 그린 그림을 공격별 폴더(`results/patchfool/`,
-  `results/lavan/`)에 저장 + 대조표 `results/gt_check_L12_n100.md`를 저장.
+- `ground_truth/visualize_gt.py`: 이 5장 x 2개 공격(PatchFool/LaVAN) 전부에 대해 GT
+  patch(노란 박스, 겹침 %)를 [clean | adv | diff 히트맵]에 그린 그림을 공격별 폴더
+  (`results/patchfool/`, `results/lavan/`)에, 요약표를 `results/gt_summary_n100.md`에
+  저장한다. attention/레이어 인자 없음 — 순전히 GT만 본다.
 
-**결과 (L=12)**: PatchFool 5장 중 4장 일치([`ground_truth/results/patchfool/img0_L12.png`](ground_truth/results/patchfool/img0_L12.png)처럼 GT와 관측이 정확히 같은 patch), 나머지 1장은
-[`ground_truth/results/patchfool/img1_L12.png`](ground_truth/results/patchfool/img1_L12.png)에서 보듯 GT(25)와 관측(23)이 같은 행에서 2칸 차이 나는 "근접
-미스"였다. **LaVAN은 5장 중 1장만 일치** — [`ground_truth/results/lavan/img2_L12.png`](ground_truth/results/lavan/img2_L12.png)를 보면 LaVAN이
-건드린 3x3 블록(노란 박스, 물속 배경이라 정보량이 적은 영역)과 실제 attention이 몰리는
-곳(하늘색 박스)이 완전히 다른 위치다.
+## Patch 17이 정말 공격 위치인가 — GT와 attention 대조 (일회성 분석)
+
+위 GT([`ground_truth/results/patchfool/img0.png`](ground_truth/results/patchfool/img0.png) 등)와, `02_sink_position.py`가 이미 계산해 둔 레이어별
+attention argmax(`argmax_col_avg`)를 대표 이미지 5장에 대해 직접 대조해봤다(이 비교
+자체는 `ground_truth/`에 넣지 않고 별도로 확인함 — GT 폴더는 GT만 담당):
+
+| image | GT patch(es) | L=12 attention argmax | 일치? |
+|---|---|---|---|
+| PatchFool 0 | 16 (100%) | 16 | O |
+| PatchFool 1 | 25 (100%) | 23 | X (2칸 근접 미스) |
+| PatchFool 2 | 159 (100%) | 159 | O |
+| PatchFool 3 | 25 (100%) | 25 | O |
+| PatchFool 4 | 159 (100%) | 159 | O |
+| LaVAN 0 | 129/115/130/116/... (부분 겹침) | 115 | O |
+| LaVAN 1 | 129/115/130/116/... (부분 겹침) | 25 | X |
+| LaVAN 2 | 129/115/130/116/... (부분 겹침) | 159 | X |
+| LaVAN 3 | 129/115/130/116/... (부분 겹침) | 25 | X |
+| LaVAN 4 | 129/115/130/116/... (부분 겹침) | 159 | X |
+
+**PatchFool은 5장 중 4장 일치, LaVAN은 5장 중 1장만 일치.** LaVAN이 건드린 3x3 블록은
+[`ground_truth/results/lavan/img2.png`](ground_truth/results/lavan/img2.png)에서 보듯 물속 배경이라 정보량이 적은 영역인데, 실제 attention은
+전혀 다른 곳(159)으로 몰린다.
 
 **중요한 재해석**: n=100 전체에서 `argmax_col_avg`(L=12)의 최빈 patch를 세어보면 clean조차
 patch 25/170/16/179가 각각 16/14/10/10회(100장 중)로 반복 등장한다 — **이미지 내용과

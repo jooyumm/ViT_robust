@@ -6,8 +6,10 @@ experiments/characterization/02_sink_position.py — "attention이 어디로 몰
 산출물 (results/characterization/, 전부 02_ 접두어로 이 스크립트가 만든 것임을 표시):
   - 02_sink_position_concentration.md   레이어별 top-3 최빈 위치가 전체 이미지의 몇 %를 차지하는가
   - 02_sink_position_match_rate.md      같은 이미지에서 clean→공격 후 argmax 위치 일치율
-  - 02_attention_heatmap_grid_img{0,1}.png  clean/PatchFool/LaVAN x 12레이어 CLS-row 히트맵
-  - 02_sorted_mass_by_layer_img0.png        "슬라이드 막대그래프"(정상=분산/공격=집중) 재현
+  - 02_attention_heatmap_grid_img{0..4}.png   clean/PatchFool/LaVAN x 12레이어 CLS-row 히트맵,
+                                       대표 이미지 5장 전부(ground_truth/의 GT와 같은 이미지 셋)
+  - 02_sorted_mass_by_layer_img{0..4}.png     "슬라이드 막대그래프"(정상=분산/공격=집중) 재현,
+                                       마찬가지로 5장 전부
 
 범위 제한: 탐지 임계값/AUROC/flag 없음. "top-3 초과" 등은 전부 설명용 관찰이지 판정 기준이
 아니다.
@@ -113,14 +115,18 @@ def main():
         print(f"{cr['layer']:>3} | {cr['clean_frac']:>16.2f} | {cr['patchfool_frac']:>13.2f} | "
               f"{cr['lavan_frac']:>16.2f} | {mr['match_pf']:>9.2f} | {mr['match_lavan']:>11.2f}")
 
-    for img_idx in range(min(repr_by_group['clean']['row_avg'].shape[0], 2)):
+    # 00_extract_attention.py가 저장한 대표 이미지 전부(기본 5장, ground_truth/의 GT와
+    # 같은 이미지 셋)에 대해 그린다 — 이전엔 2장으로 캡을 걸었는데, 이 5장이 이제 프로젝트
+    # 전체가 공유하는 기준 예시 세트라 일부만 쓰면 안 된다.
+    n_repr = repr_by_group['clean']['row_avg'].shape[0]
+    for img_idx in range(n_repr):
         p = os.path.join(out_dir, f'02_attention_heatmap_grid_img{img_idx}.png')
         plot_heatmap_grid(repr_by_group, img_idx, n_layers, p)
         print(f"Saved: {p}")
 
-    p = os.path.join(out_dir, '02_sorted_mass_by_layer_img0.png')
-    plot_sorted_mass_by_layer(repr_by_group, 0, n_layers, p)
-    print(f"Saved: {p}")
+        p = os.path.join(out_dir, f'02_sorted_mass_by_layer_img{img_idx}.png')
+        plot_sorted_mass_by_layer(repr_by_group, img_idx, n_layers, p)
+        print(f"Saved: {p}")
 
 
 if __name__ == '__main__':

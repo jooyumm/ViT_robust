@@ -7,7 +7,9 @@ experiments/characterization/01_concentration.py — "attention이 얼마나 몰
   - 01_hist_top1_row_by_layer.png     레이어별 top-1 mass(CLS row, 헤드평균) 히스토그램(3그룹)
   - 01_hist_top1_col_by_layer.png     동일, column(전체 쿼리 집계) 기준
   - 01_hist_entropy_row_by_layer.png  동일, 정규화 entropy 기준
-  - 01_head_variability_L5_L12.png    L=5/L=12에서 헤드별 top-1 mass (헤드평균에서도 살아남는가)
+  - 01_head_variability_L5_L12_img{0..4}.png  L=5/L=12에서 헤드별 top-1 mass (헤드평균에서도
+                                       살아남는가), 대표 이미지 5장 전부(ground_truth/의
+                                       GT와 같은 이미지 셋)
   - 01_layer_comparison_top1_row.png  레이어별 중앙값+IQR (PatchFool vs LaVAN vs Clean)
   - 01_concentration_summary.md       레이어별 중앙값 표 + "5x 균등분포 초과 비율"(설명용, 임계값 아님)
 
@@ -85,9 +87,14 @@ def main():
         plot_histograms(all_metrics, metric_key, n_layers, title, p)
         print(f"Saved: {p}")
 
-    p = os.path.join(out_dir, '01_head_variability_L5_L12.png')
-    plot_head_variability(repr_by_group, 0, [5, 12], p)
-    print(f"Saved: {p}")
+    # 00_extract_attention.py가 저장한 대표 이미지 전부(기본 5장, ground_truth/의 GT와
+    # 같은 이미지 셋)에 대해 그린다 — 이미지 하나로만 보고 우연히 그렇게 보이는 게 아닌지
+    # 확인하려면 여러 장이 필요하다.
+    n_repr = repr_by_group['clean']['row_ph'].shape[0]
+    for img_idx in range(n_repr):
+        p = os.path.join(out_dir, f'01_head_variability_L5_L12_img{img_idx}.png')
+        plot_head_variability(repr_by_group, img_idx, [5, 12], p)
+        print(f"Saved: {p}")
 
     p = os.path.join(out_dir, '01_layer_comparison_top1_row.png')
     plot_layer_comparison(all_metrics, 'top1_row_avg', n_layers,
