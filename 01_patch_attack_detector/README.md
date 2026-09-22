@@ -338,7 +338,7 @@ GT를 그대로 재사용한다:
 
 ## Patch 17이 정말 공격 위치인가 — GT와 attention 대조 (일회성 분석)
 
-위 GT([`ground_truth/results/patchfool/img0.png`](ground_truth/results/patchfool/img0.png) 등)와, `02_sink_position.py`가 이미 계산해 둔 레이어별
+위 GT([`ground_truth/results/patchfool/img3.png`](ground_truth/results/patchfool/img3.png) 등)와, `02_sink_position.py`가 이미 계산해 둔 레이어별
 attention argmax(`argmax_col_avg`)를 대표 이미지 5장에 대해 직접 대조해봤다(이 비교
 자체는 `ground_truth/`에 넣지 않고 별도로 확인함 — GT 폴더는 GT만 담당):
 
