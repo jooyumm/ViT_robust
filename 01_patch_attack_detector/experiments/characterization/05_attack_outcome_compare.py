@@ -53,8 +53,8 @@ def main():
     parser.add_argument('--chunk', type=int, default=20)
     parser.add_argument('--attn_layer_idx', type=int, default=4)
     parser.add_argument('--layer', type=int, default=12)
-    parser.add_argument('--success_rank', type=int, default=0, help='공격 성공 후보 중 몇 번째')
-    parser.add_argument('--fail_rank', type=int, default=0, help='공격 실패 후보 중 몇 번째')
+    parser.add_argument('--success_rank', type=int, default=0, help='nth success candidate')
+    parser.add_argument('--fail_rank', type=int, default=0, help='nth failure candidate')
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -69,7 +69,7 @@ def main():
     images, labels = next(iter(loader))
     images, labels = images.to(device), labels.to(device)
 
-    print(f"[PatchFool] 공격 생성 중 (n={args.num_samples})...")
+    print(f"[PatchFool] generating attack (n={args.num_samples})...")
     adv = chunked_patch_fool(model, images, labels, device, args.attn_layer_idx, args.chunk)
 
     clean_pred = predict(model, images, args.chunk)
@@ -78,22 +78,23 @@ def main():
 
     clean_correct = (clean_pred == labels_cpu)
     adv_correct = (adv_pred == labels_cpu)
-    success_idx = torch.where(clean_correct & ~adv_correct)[0]   # 맞았는데 공격받고 틀림
-    fail_idx = torch.where(clean_correct & adv_correct)[0]       # 맞았고 공격받아도 여전히 맞음
+    success_idx = torch.where(clean_correct & ~adv_correct)[0]   # correct -> misclassified
+    fail_idx = torch.where(clean_correct & adv_correct)[0]       # correct -> still correct
 
-    print(f"clean 정확도: {clean_correct.float().mean():.1%}")
-    print(f"공격 성공 후보 {len(success_idx)}장, 실패 후보 {len(fail_idx)}장")
+    print(f"clean accuracy: {clean_correct.float().mean():.1%}")
+    print(f"attack-success candidates: {len(success_idx)}, attack-failure candidates: {len(fail_idx)}")
 
-    assert len(success_idx) > args.success_rank, "공격 성공 후보 부족"
-    assert len(fail_idx) > args.fail_rank, "공격 실패 후보 부족"
+    assert len(success_idx) > args.success_rank, "not enough attack-success candidates"
+    assert len(fail_idx) > args.fail_rank, "not enough attack-failure candidates"
     i_success = int(success_idx[args.success_rank])
     i_fail = int(fail_idx[args.fail_rank])
-    print(f"선택: 성공 = image {i_success}, 실패 = image {i_fail}")
+    print(f"selected: success = image {i_success}, failure = image {i_fail}")
 
     out_dir = HERE.replace('/experiments/', '/results/', 1)
     os.makedirs(out_dir, exist_ok=True)
 
-    cases = [('공격 성공 (오분류됨)', i_success), ('공격 실패 (여전히 정답)', i_fail)]
+    cases = [('Attack succeeded (misclassified)', i_success),
+             ('Attack failed (still correct)', i_fail)]
     fig, axes = plt.subplots(1, 2, figsize=(15, 5))
     for ax, (title, idx) in zip(axes, cases):
         clean_row = attn_row_at_layer(model, images[idx], args.layer)
@@ -115,7 +116,7 @@ def main():
                      f'adv_pred={int(adv_pred[idx])}', fontsize=10)
         ax.legend(fontsize=8)
 
-    fig.suptitle(f'Layer {args.layer} — attack 성공 vs 실패, attention 비교')
+    fig.suptitle(f'Layer {args.layer} — attack success vs failure, attention comparison')
     plt.tight_layout()
     p = os.path.join(out_dir, f'05_outcome_compare_L{args.layer}.png')
     plt.savefig(p, dpi=150)

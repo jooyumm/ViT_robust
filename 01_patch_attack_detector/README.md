@@ -255,6 +255,27 @@ attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모�
 **범위 제한**: 탐지 임계값/AUROC/flag 판정 없음. 레이어 결합·Dual-Gate 설계는 이 결과를
 보고 다음 단계에서 논의한다.
 
+## attention 왜곡이 실제 오분류와 같이 가는가 (`05_attack_outcome_compare.py`)
+
+지금까지는 "attention이 튀는가"만 봤다. 진짜 궁금한 건 그게 **공격 성공(오분류)**과
+관련 있는가다. n=100 중 clean일 때 맞았던 87장을 공격 후 결과로 나누면 오분류 79장,
+여전히 정답 8장 — 이 중 한 장씩 뽑아 L=12 attention을 비교했다
+([`results/characterization/05_outcome_compare_L12.png`](results/characterization/05_outcome_compare_L12.png)):
+
+- **공격 성공 (image 0, 이불 사진, true=750→오분류 761)**: GT patch 16에서 clean 0.11 →
+  PatchFool 0.46으로 **4배 이상 증폭**.
+- **공격 실패 (image 11, 스쿠터 사진, true=670, 공격 후에도 670 그대로)**: GT patch 170에서
+  clean 0.32 → PatchFool 0.32로 **거의 증폭이 없다** — clean과 PatchFool 곡선이 그 지점에서
+  거의 완전히 겹친다.
+
+**흥미로운 점**: 절대적인 attention 값만 보면 실패 사례(0.32)가 성공 사례(0.46)보다 크게
+낮지도 않다 — "얼마나 쏠리는가" 자체는 두 경우 다 높다. 차이는 **clean 대비 얼마나
+증폭됐는가**다: 성공 사례는 원래 낮았던 자리를 공격이 4배 이상 끌어올렸고, 실패 사례는
+원래(clean 상태에서) 이미 강한 자연 sink(0.32)였던 자리를 공격이 목표로 삼았지만 더
+끌어올릴 여지가 없어서 아무 효과가 없었다 — 앞서 characterization 예시(공격이 이미 강한
+자연 sink와 다른 자리를 공격했다가 실패한 사례)와 같은 방향의 관찰이다. 표본 2장뿐인
+일회성 확인이라 일반화하려면 더 봐야 한다.
+
 ## GT 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
 
 **공격이 실제로 어느 patch를 얼마나 건드렸는지를 pixel diff로 계산한 ground truth**를
