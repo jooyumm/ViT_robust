@@ -37,11 +37,12 @@ def _draw_patch_box(ax, patch_idx, color, label=None, ppl=PPL, patch_size=PATCH_
 
 def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01):
     """공격이 실제로 건드린 patch(들)을 [clean | adv | diff 히트맵] 세 장에 노란 박스로
-    표시한다. 겹침 비율이 낮은(부분적으로만 겹친) patch에는 박스 옆에 %도 적는다 —
-    LaVAN처럼 16px 그리드에 정렬 안 된 공격은 patch 하나로 안 끝나기 때문. GT는 순전히
-    gt_lib.gt_coverage(픽셀 diff)로 계산한 것이고, attention이나 탐지기 결과는 이 그림에
-    전혀 들어가지 않는다. repr_by_group[group]['images'/'gt_coverage']가 없으면(구버전
-    npz) 조용히 건너뛴다."""
+    표시하고, 박스마다 겹침 비율(%)을 적는다(100%든 아니든 전부 — PatchFool처럼 patch
+    하나가 100% 나올 때만 숨기면, LaVAN처럼 여러 patch가 섞인 그림에서 제일 많이 겹친
+    가운데 patch만 라벨이 비어 보여 오히려 헷갈린다). GT는 순전히 gt_lib.gt_coverage
+    (픽셀 diff)로 계산한 것이고, attention이나 탐지기 결과는 이 그림에 전혀 들어가지
+    않는다. repr_by_group[group]['images'/'gt_coverage']가 없으면(구버전 npz) 조용히
+    건너뛴다."""
     if 'images' not in repr_by_group.get('clean', {}) or \
        'images' not in repr_by_group.get(group, {}) or \
        'gt_coverage' not in repr_by_group.get(group, {}):
@@ -62,8 +63,7 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
         ax.imshow(img, cmap=cmap)
         _draw_patch_grid(ax)
         for p, frac in gt_patches:
-            label = None if frac >= 0.999 else f'{frac:.0%}'
-            _draw_patch_box(ax, p, 'yellow', label=label)
+            _draw_patch_box(ax, p, 'yellow', label=f'{frac:.0%}')
         ax.set_xticks([]); ax.set_yticks([])
         ax.set_title(title, fontsize=10)
 
