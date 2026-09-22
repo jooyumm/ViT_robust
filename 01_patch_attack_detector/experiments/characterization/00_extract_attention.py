@@ -29,11 +29,15 @@ detector/topk_mass_v1.py의 CLS-row·헤드평균 전용 함수는 쓰지 않는
   - gt_coverage(patchfool/lavan만): 대표 이미지 n_repr장분, (n_repr, 196) — 공격이 실제로
     "어느 patch를 얼마나 건드렸는지"를 clean/adv 픽셀을 diff해서 계산한 ground truth(추측
     아님, `../../ground_truth/gt_lib.py` 참고 — 탐지기 테스트 등에서도 재사용하려고
-    characterization 밖의 프로젝트 top-level로 뺐다). `../../ground_truth/
-    check_attention_vs_gt.py`가 이걸 관측된 attention argmax와 직접 비교한다.
+    characterization 밖의 프로젝트 top-level로 뺐다). `../../ground_truth/visualize_gt.py`
+    가 이 GT를 그림/표로 뽑아준다.
+
+대표 이미지는 항상 --repr_start(기본 0)부터 n_repr장 -- --repr_start를 안 바꾸면 매번
+images[0:n_repr]로 고정돼서 "예시 이미지"가 절대 안 바뀐다. 다른 예시 세트를 보고
+싶으면 --repr_start를 바꿔서 다시 실행할 것(같은 --chunk 안에 들어와야 함).
 
 사용법:
-  python 00_extract_attention.py --num_samples 100 --seed 42 --chunk 20
+  python 00_extract_attention.py --num_samples 100 --seed 42 --chunk 20 --repr_start 0
 """
 import argparse
 import os
@@ -91,9 +95,14 @@ def chunked_lavan(model16, images, labels, device, patch_ratio, steps, chunk):
     return torch.cat(adv_chunks, dim=0)
 
 
-def process_group(model, images, chunk, n_layers=12, n_repr=2):
+def process_group(model, images, chunk, n_layers=12, n_repr=2, repr_start=0):
     """반환: metrics(dict of ndarray), repr_row_avg, repr_col_avg, repr_row_ph, repr_col_ph,
-    repr_row_full_avg, repr_full_avg. docstring 상세는 모듈 docstring의 "저장하는 것" 참고."""
+    repr_row_full_avg, repr_full_avg. docstring 상세는 모듈 docstring의 "저장하는 것" 참고.
+    repr_start: 대표 이미지로 뽑을 구간의 시작 인덱스(전역, 0-based). 항상 0(첫 청크의
+    맨 앞)만 쓰면 "대표 이미지"가 매번 똑같은 5장(images[0:5])으로 고정돼서 절대 안
+    바뀐다 — 다른 예시가 필요하면 이 값을 바꿔서 다시 추출해야 한다. repr_start와
+    repr_start+n_repr는 반드시 같은 청크 안에 있어야 한다(청크 경계를 넘어가는 구간은
+    지원 안 함)."""
     B = images.shape[0]
     keys_avg = ['top1_row_avg', 'ent_row_avg', 'gini_row_avg',
                 'top1_col_avg', 'ent_col_avg', 'gini_col_avg',
@@ -155,14 +164,15 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2):
         for k in keys_ph:
             acc_ph[k].append(torch.stack(chunk_ph[k], dim=1).numpy())            # (b, n_layers, heads)
 
-        if s == 0:
-            n_take = min(n_repr, e - s)
-            repr_row_avg = torch.stack(chunk_row_avg_layers, dim=1)[:n_take].numpy()
-            repr_col_avg = torch.stack(chunk_col_avg_layers, dim=1)[:n_take].numpy()
-            repr_row_ph = torch.stack(chunk_row_ph_layers, dim=1)[:n_take].numpy()
-            repr_col_ph = torch.stack(chunk_col_ph_layers, dim=1)[:n_take].numpy()
-            repr_row_full_avg = torch.stack(chunk_row_full_avg_layers, dim=1)[:n_take].numpy()
-            repr_full_avg = torch.stack(chunk_full_avg_layers, dim=1)[:n_take].numpy()
+        if s <= repr_start < e:
+            local_start = repr_start - s
+            local_end = min(local_start + n_repr, e - s)
+            repr_row_avg = torch.stack(chunk_row_avg_layers, dim=1)[local_start:local_end].numpy()
+            repr_col_avg = torch.stack(chunk_col_avg_layers, dim=1)[local_start:local_end].numpy()
+            repr_row_ph = torch.stack(chunk_row_ph_layers, dim=1)[local_start:local_end].numpy()
+            repr_col_ph = torch.stack(chunk_col_ph_layers, dim=1)[local_start:local_end].numpy()
+            repr_row_full_avg = torch.stack(chunk_row_full_avg_layers, dim=1)[local_start:local_end].numpy()
+            repr_full_avg = torch.stack(chunk_full_avg_layers, dim=1)[local_start:local_end].numpy()
 
         del layer_weights
         if torch.cuda.is_available():
@@ -186,7 +196,15 @@ def main():
     parser.add_argument('--n_repr', type=int, default=5,
                         help='시각화/GT 확인용 대표 이미지 수 (05_gt_check.py가 여러 장에 '
                              '걸쳐 GT-vs-관측 일치율을 보려면 2장으론 부족해서 5로 늘림)')
+    parser.add_argument('--repr_start', type=int, default=0,
+                        help='대표 이미지로 쓸 구간의 시작 인덱스(0-based, 전체 배치 기준). '
+                             '항상 0이면 "대표 이미지"가 매번 images[0:n_repr]로 고정돼서 '
+                             '절대 안 바뀐다 -- 다른 예시 세트가 필요하면 이 값을 바꿀 것. '
+                             'repr_start + n_repr는 --chunk를 넘으면 안 됨(청크 경계 안 지원).')
     args = parser.parse_args()
+    assert (args.repr_start // args.chunk) == ((args.repr_start + args.n_repr - 1) // args.chunk), \
+        f"--repr_start {args.repr_start} ~ +{args.n_repr}가 --chunk {args.chunk} 경계를 " \
+        "넘어감 -- 대표 이미지 구간은 한 청크 안에 있어야 함"
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -219,7 +237,8 @@ def main():
     for name in GROUPS:
         print(f"\n[{name}] 전체 레이어x헤드 attention 수집 및 지표 계산 중...")
         metrics, row_avg, col_avg, row_ph, col_ph, row_full_avg, full_avg = process_group(
-            model16, images_by_group[name], args.chunk, n_layers=n_layers, n_repr=args.n_repr)
+            model16, images_by_group[name], args.chunk, n_layers=n_layers, n_repr=args.n_repr,
+            repr_start=args.repr_start)
         for k, v in metrics.items():
             npz_payload[f'{name}__{k}'] = v
         npz_payload[f'{name}__row_avg_repr'] = row_avg
@@ -229,15 +248,16 @@ def main():
         npz_payload[f'{name}__row_full_avg_repr'] = row_full_avg
         npz_payload[f'{name}__full_avg_repr'] = full_avg
 
-        n_take = min(args.n_repr, images_by_group[name].shape[0])
-        npz_payload[f'{name}__repr_images'] = images_by_group[name][:n_take].detach().cpu().numpy()
+        repr_end = min(args.repr_start + args.n_repr, images_by_group[name].shape[0])
+        npz_payload[f'{name}__repr_images'] = \
+            images_by_group[name][args.repr_start:repr_end].detach().cpu().numpy()
 
         if name != 'clean':
             # 공격이 실제로 어느 patch를 얼마나 건드렸는지 clean과 diff해서 GT를 만든다
             # (추측/눈대중 아님 -- gt_lib.gt_coverage 참고)
             gt = np.stack([
                 gt_coverage(images[i].detach().cpu(), images_by_group[name][i].detach().cpu())
-                for i in range(n_take)
+                for i in range(args.repr_start, repr_end)
             ])
             npz_payload[f'{name}__gt_coverage_repr'] = gt
 

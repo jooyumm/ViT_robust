@@ -271,7 +271,7 @@ block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마�
 **정성적 히트맵**: [`results/characterization/02_attention_heatmap_grid_img0.png`](results/characterization/02_attention_heatmap_grid_img0.png),
 [`img1`](results/characterization/02_attention_heatmap_grid_img1.png) — 같은 원본
 사진 기준 clean/PatchFool/LaVAN 3×12(레이어) 그리드. image 1에서는 clean/LaVAN이 같은
-위치(우상단)에 이미 "sink"처럼 보이는 밝은 패치를 갖고 있고, PatchFool은 그 자리를 훨씬
+위치(우하단 모서리)에 이미 "sink"처럼 보이는 밝은 패치를 갖고 있고, PatchFool은 그 자리를 훨씬
 더 밝게 만드는 것처럼 보였다(표본 2장뿐인 관찰) — 아래 "Sink 위치 일관성" 절에서 n=100
 전체로 이 관찰을 정량화한 결과, **완전히 맞지는 않았다**(레이어에 따라 다름, 자세한 내용은
 해당 절 참고).
@@ -283,38 +283,37 @@ block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마�
 **"진짜 튀는 토큰이 있는가" 예시 확인**: [`results/characterization/03_token_bars_L12_img0.png`](results/characterization/03_token_bars_L12_img0.png)
 (`03_token_bars.py`) — 위 그래프들은 값을 정렬하거나 히트맵 색으로 뭉뚱그려서 "특정 토큰
 인덱스"가 눈에 안 들어온다. 여기서는 정렬 없이 197개 토큰(0=CLS, 1~196=patch) 순서
-그대로 선 그래프를 그려서, image 0/L=12에서 PatchFool만 **patch 17**에서 0.63까지 치솟고
-(같은 자리에서 clean은 0.11, LaVAN은 거의 0으로 평범한 수준) 나머지는 전부 평평함을 직접
-확인했다 — top1_mass 같은 집계 지표가 아니라 "정말 그 위치 하나가 튀는 것"을 눈으로 보여주는
-가장 직접적인 증거. (patch 17이 우연히 튄 게 아니라 **실제로 공격이 픽셀을 바꾼 바로 그
-patch**인지도 clean/adv 이미지를 직접 diff해서 확인함 — 정확히 patch 17(0-indexed 16)에서만
-픽셀이 바뀌었다. `patch_fool_attack`은 `attn_layer_idx=4`에서 CLS가 가장 많이 보는 patch
-하나를 고른 뒤 그 patch 안에만 마스크를 씌워 perturbation을 넣으므로, "L=4에서 고른 그
-patch가 L=12에서도 계속, 그리고 이제는 거의 모든 토큰에게 sink로 남는다"는 뜻.)
+그대로 선 그래프를 그려서, image 0/L=12에서 PatchFool만 **token 180**(patch 179)에서
+0.432까지 치솟고(같은 자리에서 clean은 0.095, LaVAN은 0.117로 평범한 수준) 나머지는 전부
+평평함을 직접 확인했다 — top1_mass 같은 집계 지표가 아니라 "정말 그 위치 하나가 튀는 것"을
+눈으로 보여주는 가장 직접적인 증거. (이 자리가 우연히 튄 게 아니라 **실제로 공격이 픽셀을
+바꾼 바로 그 patch**인지는 `ground_truth/`가 clean/adv 이미지를 직접 diff해서 이미 확정해
+뒀다 — 정확히 patch 179(0-indexed)에서만 픽셀이 바뀌었고, 위 CLS 스파이크 위치와 정확히
+일치한다. `patch_fool_attack`은 `attn_layer_idx=4`에서 CLS가 가장 많이 보는 patch 하나를
+고른 뒤 그 patch 안에만 마스크를 씌워 perturbation을 넣으므로, "L=4에서 고른 그 patch가
+L=12에서도 계속, 그리고 이제는 다른 토큰들에게도 sink로 남는다"는 뜻.)
 
-**CLS 말고 다른 토큰들도 patch 17을 보는가**: [`results/characterization/04_column_check_L12_img0_tok17.png`](results/characterization/04_column_check_L12_img0_tok17.png)
+**CLS 말고 다른 토큰들도 그 patch를 보는가**: [`results/characterization/04_column_check_L12_img0_tok180.png`](results/characterization/04_column_check_L12_img0_tok180.png)
 (`04_column_check.py`) — 03의 발견은 "CLS 하나"의 관점이다. PatchFool 논문 주장(공격이
 attention을 특정 patch로 강하게 끌어당긴다)이 맞다면, CLS뿐 아니라 나머지 196개 patch
-쿼리도 patch 17을 봐야 한다. 실제로 확인해보니:
+쿼리도 token 180을 봐야 한다. 실제로 확인해보니:
 
-| | CLS -> 17 | patch-쿼리 196개 평균 -> 17 | >0.3인 patch-쿼리 비율 |
+| | CLS -> 180 | patch-쿼리 196개 평균 -> 180 | >0.3인 patch-쿼리 비율 |
 |---|---|---|---|
-| Clean | 0.113 | 0.110 | 0% |
-| **PatchFool** | **0.630** | **0.515** | **94.9%** |
-| LaVAN | 0.084 | 0.079 | 0% |
+| Clean | 0.095 | 0.082 | 0% |
+| **PatchFool** | **0.432** | **0.243** | **31.1%** |
+| LaVAN | 0.117 | 0.093 | 0% |
 
-균등분포 기준선은 1/197=0.005. PatchFool에서는 CLS뿐 아니라 거의 모든 쿼리 토큰(196개 중
-94.9%)이 patch 17에 0.3 이상의 attention을 준다 — 그림에서도 PatchFool 곡선(빨강)만 전체
-쿼리 인덱스에 걸쳐 0.4~0.7 사이에 머무르고, clean/LaVAN(파랑/초록)은 쿼리 인덱스와 무관하게
-0.05~0.15에 붙어있다. 즉 patch 17은 CLS만의 특이 현상이 아니라 **레이어 12에서 거의 모든
-토큰이 공유하는 진짜 attention sink**다 — PatchFool의 주장과 일치. (clean도 baseline보다는
-높은 0.11 정도를 보이는데, 이는 attention sink가 공격과 무관하게 후반 레이어에 자연적으로
-존재하는 현상이고, PatchFool은 그 자연 sink를 4.7배(0.11→0.51)까지 증폭시켜 거의 모든
-토큰을 하나로 결집시킨다고 해석할 수 있다.)
+균등분포 기준선은 1/197=0.005. PatchFool에서는 CLS뿐 아니라 patch-쿼리 196개 중 31.1%가
+token 180에 0.3 이상의 attention을 주고, 평균도 clean 대비 약 3배(0.082→0.243)로
+올라간다 — clean/LaVAN은 쿼리 인덱스와 무관하게 낮은 수준(0.08~0.12대)에 머무른다.
+CLS만의 특이 현상이 아니라 다른 토큰들도 어느 정도 같이 끌려간다는 뜻이지만, 이전에
+살펴본 이미지(94.9%가 0.3을 넘던 사례)만큼 극단적이진 않다 — "몇 %가 끌려가는가"는
+이미지마다 편차가 크다는 걸 보여주는 사례이기도 하다.
 
 ## GT 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
 
-위 patch 17 결과까지는 image 0 한 장을 놓고 clean/adv를 직접 diff하는 일회성 스크립트로
+위 결과까지는 image 0 한 장을 놓고 clean/adv를 직접 diff하는 일회성 스크립트로
 확인했다. 이걸 매번 손으로 하지 않도록, **공격이 실제로 어느 patch를 얼마나 건드렸는지를
 pixel diff로 계산한 ground truth**를 파이프라인에 내장했다. `ground_truth/`의 역할은
 딱 이것뿐이다 — attention이나 탐지기 출력과 비교하는 로직은 여기 없다(그건 이 GT를
@@ -336,39 +335,49 @@ GT를 그대로 재사용한다:
   (`results/patchfool/`, `results/lavan/`)에, 요약표를 `results/gt_summary_n100.md`에
   저장한다. attention/레이어 인자 없음 — 순전히 GT만 본다.
 
-## Patch 17이 정말 공격 위치인가 — GT와 attention 대조 (일회성 분석)
+## PatchFool이 고른 patch가 정말 공격 위치인가 — GT와 attention 대조 (일회성 분석)
 
-위 GT([`ground_truth/results/patchfool/img3.png`](ground_truth/results/patchfool/img3.png) 등)와, `02_sink_position.py`가 이미 계산해 둔 레이어별
-attention argmax(`argmax_col_avg`)를 대표 이미지 5장에 대해 직접 대조해봤다(이 비교
-자체는 `ground_truth/`에 넣지 않고 별도로 확인함 — GT 폴더는 GT만 담당):
+위 GT([`ground_truth/results/patchfool/img0.png`](ground_truth/results/patchfool/img0.png) 등)와, `02_sink_position.py`가 이미 계산해 둔 레이어별
+attention argmax(`argmax_col_avg`, `argmax_row_avg`)를 대표 이미지 5장에 대해 직접
+대조해봤다(이 비교 자체는 `ground_truth/`에 넣지 않고 별도로 확인함 — GT 폴더는 GT만
+담당). 대표 이미지가 전체 n=100 중 어디서 왔는지(`--repr_start`)에 따라 매번 다른 5장이
+나오므로, 아래 수치는 이번에 뽑힌 5장(global index 20~24) 기준이다:
 
-| image | GT patch(es) | L=12 attention argmax | 일치? |
+| image | GT patch (겹침) | L=12 attention argmax | 일치? |
 |---|---|---|---|
-| PatchFool 0 | 16 (100%) | 16 | O |
-| PatchFool 1 | 25 (100%) | 23 | X (2칸 근접 미스) |
-| PatchFool 2 | 159 (100%) | 159 | O |
+| PatchFool 0 | 179 (100%) | 179 | O |
+| PatchFool 1 | 179 (100%) | 179 | O |
+| PatchFool 2 | 0 (100%) | 0 | O |
 | PatchFool 3 | 25 (100%) | 25 | O |
-| PatchFool 4 | 159 (100%) | 159 | O |
-| LaVAN 0 | 129/115/130/116/... (부분 겹침) | 115 | O |
-| LaVAN 1 | 129/115/130/116/... (부분 겹침) | 25 | X |
-| LaVAN 2 | 129/115/130/116/... (부분 겹침) | 159 | X |
-| LaVAN 3 | 129/115/130/116/... (부분 겹침) | 25 | X |
-| LaVAN 4 | 129/115/130/116/... (부분 겹침) | 159 | X |
+| PatchFool 4 | 90 (100%) | 90 | O |
+| LaVAN 0 | 131 (100%, 주변 8개 patch 4~75% 부분 겹침) | 179 | X |
+| LaVAN 1 | 131 (동일) | 179 | X |
+| LaVAN 2 | 131 (동일) | 183 | X |
+| LaVAN 3 | 131 (동일) | 25 | X |
+| LaVAN 4 | 131 (동일) | 90 | X |
 
-**PatchFool은 5장 중 4장 일치, LaVAN은 5장 중 1장만 일치.** LaVAN이 건드린 3x3 블록은
-[`ground_truth/results/lavan/img2.png`](ground_truth/results/lavan/img2.png)에서 보듯 물속 배경이라 정보량이 적은 영역인데, 실제 attention은
-전혀 다른 곳(159)으로 몰린다.
+**PatchFool은 5장 전부 일치(5/5), LaVAN은 5장 전부 불일치(0/5).** LaVAN은 같은 배치
+안에서 위치가 고정이라(코드 주석: "배치 내 모든 샘플 동일 위치") 5장 다 patch 131
+언저리를 공격하는데, [`ground_truth/results/lavan/img0.png`](ground_truth/results/lavan/img0.png)에서 보듯 녹슨 고리처럼 나름
+눈에 띄는 물체를 공격해도 attention은 전혀 다른 곳(179)으로 몰린다 — 즉 "정보량이
+적은 배경이라 못 끌어당긴다"보다는, LaVAN이 애초에 attention을 겨냥하지 않는 공격이라는
+게 더 근본적인 이유로 보인다.
 
-**중요한 재해석**: n=100 전체에서 `argmax_col_avg`(L=12)의 최빈 patch를 세어보면 clean조차
-patch 25/170/16/179가 각각 16/14/10/10회(100장 중)로 반복 등장한다 — **이미지 내용과
-무관하게 특정 patch 위치로 attention이 쏠리는 "고정 sink"가 이 ViT에 이미 존재**하고,
-PatchFool이 `attn_layer_idx=4`에서 고르는 patch(16, 25 등)가 우연히 이 고정 sink 후보와
-자주 겹친다. 즉 PatchFool의 4/5 일치율은 "공격이 없던 곳에 완전히 새로운 sink를 만든다"
-보다는 "이미 sink가 될 가능성이 있는 자리를 골라(레이어 4 CLS attention 기준) 그 sink를
-극단적으로 증폭시킨다"(위 column_check의 0.11→0.51, 4.7배)에 더 가깝다. LaVAN은 attention을
-전혀 신경 쓰지 않고 위치를 랜덤으로 골라 공격하므로 이 고정 sink와 겹칠 확률이 낮고, 그
-결과 attention을 자기 위치로 끌어오지 못한다(1/5) — patch_select='Attn'(PatchFool)과
-랜덤 위치(LaVAN)의 차이가 "공격이 attention을 실제로 지배하는가"를 가르는 핵심 변수라는 뜻.
+**왜 PatchFool은 5/5인가**: 같은 이미지의 **clean(공격 없음) 상태**에서의 L=12
+attention argmax와 비교하면 4/5(image 0,1,3,4)는 PatchFool이 공격한 patch가 **그
+이미지가 원래(공격 없이도) 갖고 있던 L=12 sink 위치와 정확히 같다** — `attn_layer_idx=4`
+(초반 레이어) 기준으로 고른 patch가 결과적으로 L=12(후반 레이어)의 자연 발생 sink와
+일치한다는 뜻. 나머지 1/5(image 2)는 clean sink(183)와 다른 자리(0)를 공격했는데, 그
+경우엔 공격이 clean sink를 밀어내고 **새 sink를 만들어냈다**(공격 후 관측 argmax도
+183이 아니라 0). 즉 PatchFool은 "이미 sink가 될 자리를 골라 증폭"하거나(4/5), 안 되면
+"직접 새 sink를 만들어서라도"(1/5) 결국 자기 patch를 L=12의 지배적 위치로 만든다 —
+5/5 전부 그 결과는 같다. n=100 전체에서도 patch 25/170/16/179 같은 소수 위치가
+반복적으로 등장하는 것(clean 기준 각각 16/14/10/10회, 100장 중)은 이 "이미지마다 고유한
+자연 sink가 있다"는 관찰과 같은 방향이다. LaVAN은 attention을 전혀 신경 쓰지 않고
+위치를 랜덤(배치당 1곳 고정)으로 골라 공격하므로 그 이미지의 자연 sink와 겹칠 일이
+거의 없고, 결과적으로 attention을 자기 위치로 가져오지도 못한다 —
+patch_select='Attn'(PatchFool, attn_layer_idx=4 기준 선택)과 랜덤 위치(LaVAN)의 차이가
+"공격이 attention을 실제로 지배하는가"를 가르는 핵심 변수라는 뜻.
 
 **범위 제한**: 탐지 임계값/AUROC/flag 판정 없음(위 4번 항목의 "5×균등분포"도 설명용).
 레이어 결합·Dual-Gate 설계는 이 결과를 보고 다음 단계에서 논의한다.
