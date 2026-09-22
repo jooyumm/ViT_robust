@@ -63,15 +63,21 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
     show_pct = (group != 'patchfool')
 
     diff = np.abs(_unnormalize(adv_img) - _unnormalize(clean_img)).sum(axis=-1)
+    # LaVAN은 attention 대신 눈에 잘 안 띄는 작은 패치를 공격하는데, 격자선이 그 위에
+    # 겹치면 오히려 공격이 더 안 보인다 — clean/adv 두 사진은 격자 없이 원본 그대로
+    # 보여주고, 격자는 patch 경계가 실제로 필요한 diff 패널에만 그린다. PatchFool은
+    # 공격 자체가 이미 뚜렷한 노이즈라 격자가 있어도 안 가려서 그대로 둔다.
+    grid_panels = (0, 1, 2) if group != 'lavan' else (2,)
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
     panels = [(axes[0], _unnormalize(clean_img), 'Clean', CLEAN_BOX_COLOR, False),
               (axes[1], _unnormalize(adv_img), f'{GROUP_LABELS[group]}', ATTACK_BOX_COLOR, False),
               (axes[2], diff, 'diff (bright = pixels changed)', ATTACK_BOX_COLOR, show_pct)]
-    for ax, img, title, box_color, label_here in panels:
+    for i, (ax, img, title, box_color, label_here) in enumerate(panels):
         cmap = None if img.ndim == 3 else 'hot'
         ax.imshow(img, cmap=cmap)
-        _draw_patch_grid(ax)
+        if i in grid_panels:
+            _draw_patch_grid(ax)
         for p, frac in gt_patches:
             label = f'{frac:.0%}' if label_here else None
             _draw_patch_box(ax, p, box_color, label=label)
