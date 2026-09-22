@@ -66,38 +66,3 @@ lavan.py}`는 세 프로젝트가 완전히 동일한 코드를 쓴다. 예전�
 (`01_patch_attack_detector/README.md` 참고). 자세한 import 방식은
 `02_patch_switch_defense/README.md`의 "탐지기가 별도 프로젝트로 분리됨" 절 참고.
 
-## 폴더 이름 이력
-
-`ViT_tradeoff`/`ViT_patchSwitch`/`ViT_detect` → `patch_size_tradeoff`/`patch_switch_defense`/
-`patch_attack_detector`(각 프로젝트가 실제로 하는 일을 이름에 반영, "ViT_" 접두어 제거) →
-`00_patch_size_tradeoff`/`01_patch_attack_detector`/`02_patch_switch_defense`(지금 진행
-순서를 번호로 반영) — 두 차례 이름을 바꿨다. 코드/문서 안의 하드코딩된 경로 문자열(예:
-`os.path.join(SHARED_SRC_ROOT, '01_patch_attack_detector')`)도 매번 같이 고쳤고, 바꿀
-때마다 영향받는 스크립트를 `--help`(또는 전체 실행)로 재검증했다.
-
-## git 이력
-
-`00_patch_size_tradeoff`/`01_patch_attack_detector`/`02_patch_switch_defense`/`src`는 원래
-각자 독립된 git 저장소였다. 2026-09-\*에 GitHub에 단일 저장소로 올리기 위해 이 폴더
-(`ViT_robust`) 자체를 새 git 저장소로 통합했다 — 네 저장소의 커밋 이력을 병합하는 대신
-(이 환경에 git-subtree/git-filter-repo가 없어서) 새 이력으로 시작했다. 각 프로젝트의 이전
-이력은 `<프로젝트>/.git.bak/`에 저장소 형태 그대로 로컬 백업돼 있다(이 저장소에서는
-`.gitignore`로 제외, 삭제 안 함 — 필요하면 `.git.bak`를 `.git`으로 다시 이름 바꾸면 그
-프로젝트만 예전 이력으로 되돌릴 수 있다).
-
-## 회귀 테스트
-
-`src/`를 공유로 합친 리팩터링은 29개 파일(각 프로젝트가 자기 프로젝트 루트 기준으로
-`from src.X import ...`하던 것 전부)의 import 경로를 직접 고치는 방식으로 했다(심볼릭 링크
-대신 — 명시적인 게 낫다는 판단). 검증은 두 단계로 했다:
-- **전체 파일**: `python <script>.py --help`(또는 --help 없이 바로 실행되는 스크립트는
-  전체 실행)로 import 단계까지 통과하는지 확인 — 실제로 `src/attacks/__init__.py`가 여전히
-  (더 이상 거기 없는) `pgd.py`를 참조하던 버그를 이 단계에서 잡았다.
-- **알려진 수치가 있는 실험**은 GPU로 실제로 재실행해 리팩터링 전후 수치가 완전히 동일한지
-  확인: `system_comparison`(n=250, 이후 02_patch_switch_defense의 experiments/ 정리로
-  삭제됨 — 삭제 전 마지막으로 재확인한 수치는 git 이력에 남아있음), `01_patch_attack_detector`
-  의 `layer_sweep`(n=250)과 `00_extract_attention`(n=100). 폴더 이름을 두 번 바꾸는 동안에도
-  매번 다시 확인해서 항상 리팩터링 전과 완전히 동일한 수치가 나왔다.
-- `defense/local_switch.py`의 P8 patch_embed 최적화(784개 전부 계산 → flag된 4개만 계산)는
-  전용 검증 스크립트로 최적화 전후 출력이 **완전히 동일**(최대 절대오차 0.0)함과, 미분
-  가능 경로(`local_swap_logits`)의 gradient가 여전히 정상적으로 흐름을 확인했다.

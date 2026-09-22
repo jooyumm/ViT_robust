@@ -53,6 +53,15 @@ def full_row(attn):
     return attn[..., 0, :]
 
 
+def full_col(attn, key_idx):
+    """모든 쿼리 토큰(CLS+196 patch) 각각이 특정 key 토큰 하나(key_idx: 0=CLS, 1~196=patch)에게
+    주는 raw attention. full_row를 뒤집은 버전 — full_row는 "CLS 하나가 전체 197개를 보는
+    분포"이고, 이건 "전체 197개 쿼리 각각이 특정 토큰 하나를 보는 값"이다(03_token_bars.py의
+    발견: CLS가 patch 17을 튀게 봄 -- 그게 진짜 sink라면 다른 토큰들도 17을 봐야 하는지
+    확인하는 데 씀). 정규화 안 함(각 쿼리 행의 softmax 합은 이미 1). attn: (..., N, N) -> (..., N)."""
+    return attn[..., :, key_idx]
+
+
 def col_distribution(attn):
     """전체 쿼리(CLS+patch)가 각 patch(key)에 주는 attention의 합, 정규화. attn: (..., N, N)."""
     col_sum = attn[..., :, 1:].sum(dim=-2)

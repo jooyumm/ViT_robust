@@ -21,6 +21,9 @@ detector/topk_mass_v1.py의 CLS-row·헤드평균 전용 함수는 쓰지 않는
     정렬-질량 그림용)
   - row_full_avg의 대표 이미지 n_repr장분(197차원, CLS 포함·정규화 안 됨 — 03_token_bars.py
     가 "토큰 197개 중 어디가 튀는가"를 CLS까지 포함해서 그리는 데 씀)
+  - full_avg의 대표 이미지 n_repr장분(197x197 전체 헤드평균 attention 행렬 그대로, 레이어별
+    — 04_column_check.py가 "CLS 말고 다른 토큰들도 특정 patch를 보는가"를 확인하려고
+    임의의 key 열(column)을 뽑아 쓴다. row_full_avg는 이 행렬의 0번째 행과 같다)
 
 사용법:
   python 00_extract_attention.py --num_samples 100 --seed 42 --chunk 20
@@ -80,8 +83,8 @@ def chunked_lavan(model16, images, labels, device, patch_ratio, steps, chunk):
 
 
 def process_group(model, images, chunk, n_layers=12, n_repr=2):
-    """반환: metrics(dict of ndarray), repr_row_avg, repr_col_avg, repr_row_ph, repr_col_ph.
-    docstring 상세는 모듈 docstring의 "저장하는 것" 참고."""
+    """반환: metrics(dict of ndarray), repr_row_avg, repr_col_avg, repr_row_ph, repr_col_ph,
+    repr_row_full_avg, repr_full_avg. docstring 상세는 모듈 docstring의 "저장하는 것" 참고."""
     B = images.shape[0]
     keys_avg = ['top1_row_avg', 'ent_row_avg', 'gini_row_avg',
                 'top1_col_avg', 'ent_col_avg', 'gini_col_avg',
@@ -93,6 +96,7 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2):
     repr_row_avg, repr_col_avg = [], []
     repr_row_ph, repr_col_ph = [], []
     repr_row_full_avg = []
+    repr_full_avg = []
 
     for s in range(0, B, chunk):
         e = min(s + chunk, B)
@@ -103,6 +107,7 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2):
         chunk_row_avg_layers, chunk_col_avg_layers = [], []
         chunk_row_ph_layers, chunk_col_ph_layers = [], []
         chunk_row_full_avg_layers = []
+        chunk_full_avg_layers = []
 
         for L in range(n_layers):
             attn_L = layer_weights[L]                # (b, heads, 197, 197)
@@ -134,6 +139,7 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2):
             chunk_row_ph_layers.append(row_ph)
             chunk_col_ph_layers.append(col_ph)
             chunk_row_full_avg_layers.append(full_row(attn_L_avg))   # (b, 197) -- CLS 포함, 03_token_bars.py용
+            chunk_full_avg_layers.append(attn_L_avg)                 # (b, 197, 197) -- 04_column_check.py용
 
         for k in keys_avg:
             acc_avg[k].append(torch.stack(chunk_avg[k], dim=1).numpy())          # (b, n_layers)
@@ -147,6 +153,7 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2):
             repr_row_ph = torch.stack(chunk_row_ph_layers, dim=1)[:n_take].numpy()
             repr_col_ph = torch.stack(chunk_col_ph_layers, dim=1)[:n_take].numpy()
             repr_row_full_avg = torch.stack(chunk_row_full_avg_layers, dim=1)[:n_take].numpy()
+            repr_full_avg = torch.stack(chunk_full_avg_layers, dim=1)[:n_take].numpy()
 
         del layer_weights
         if torch.cuda.is_available():
@@ -155,7 +162,8 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2):
     metrics = {}
     metrics.update({k: np.concatenate(v, axis=0) for k, v in acc_avg.items()})
     metrics.update({k: np.concatenate(v, axis=0) for k, v in acc_ph.items()})
-    return metrics, repr_row_avg, repr_col_avg, repr_row_ph, repr_col_ph, repr_row_full_avg
+    return (metrics, repr_row_avg, repr_col_avg, repr_row_ph, repr_col_ph,
+            repr_row_full_avg, repr_full_avg)
 
 
 def main():
@@ -199,7 +207,7 @@ def main():
     npz_payload = {'n_samples': args.num_samples, 'n_layers': n_layers}
     for name in GROUPS:
         print(f"\n[{name}] 전체 레이어x헤드 attention 수집 및 지표 계산 중...")
-        metrics, row_avg, col_avg, row_ph, col_ph, row_full_avg = process_group(
+        metrics, row_avg, col_avg, row_ph, col_ph, row_full_avg, full_avg = process_group(
             model16, images_by_group[name], args.chunk, n_layers=n_layers, n_repr=args.n_repr)
         for k, v in metrics.items():
             npz_payload[f'{name}__{k}'] = v
@@ -208,6 +216,7 @@ def main():
         npz_payload[f'{name}__row_ph_repr'] = row_ph
         npz_payload[f'{name}__col_ph_repr'] = col_ph
         npz_payload[f'{name}__row_full_avg_repr'] = row_full_avg
+        npz_payload[f'{name}__full_avg_repr'] = full_avg
 
         med = np.median(metrics['top1_row_avg'], axis=0)
         print(f"  top1_row_avg median by layer: " + ", ".join(f"{v:.3f}" for v in med))

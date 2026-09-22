@@ -164,3 +164,35 @@ def plot_token_attention_line(repr_by_group, img_idx, layer, out_path, spike_thr
     plt.savefig(out_path, dpi=150)
     plt.close(fig)
     return True
+
+
+def plot_column_attention_line(repr_by_group, img_idx, layer, target_token, out_path):
+    """plot_token_attention_line을 뒤집은 그림: "CLS가 어디를 보는가"가 아니라 "**전체
+    197개 쿼리 토큰 각각이** target_token 하나를 얼마나 보는가"를 그린다. x축은 쿼리
+    토큰 인덱스(0=CLS, 1~196=patch), y축은 그 쿼리가 target_token에게 주는 raw attention.
+    03_token_bars.py가 CLS 관점에서 찾은 스파이크(예: L=12에서 patch 17)가 진짜 "다들 보는
+    sink"라면, 이 그림에서도 대부분의 쿼리 곡선이 target_token 지점에서 높아야 한다 — 반대로
+    CLS 혼자만 튀고 나머지 196개 쿼리는 낮으면, "sink"가 아니라 "CLS만의 특이 현상"이라는
+    뜻. repr_by_group[g]['full_avg']가 없으면(구버전 npz) 조용히 건너뛴다."""
+    if 'full_avg' not in repr_by_group['clean']:
+        return False
+    full_avg = repr_by_group['clean']['full_avg']
+    n_tokens = full_avg.shape[-1]   # 197
+    x = np.arange(n_tokens)
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for g in GROUPS:
+        mat = repr_by_group[g]['full_avg'][img_idx, layer - 1]   # (197, 197) query x key
+        vals = mat[:, target_token]                               # (197,) -- 모든 쿼리 -> target_token
+        ax.plot(x, vals, color=GROUP_COLORS[g], label=GROUP_LABELS[g], lw=1.3)
+
+    label = 'CLS' if target_token == 0 else f'patch {target_token}'
+    ax.set_xlim(0, n_tokens - 1)
+    ax.set_xlabel('query token index (0=CLS, 1-196=patch)')
+    ax.set_ylabel(f'attention paid to {label}')
+    ax.legend()
+    ax.set_title(f'Layer {layer} — who attends to {label}?')
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+    return True

@@ -72,6 +72,10 @@ ViT_robust/
                                     선 그래프(정렬 안 함), 튀는 지점엔 몇 번 patch인지
                                     자동 라벨. 02의 정렬된 그래프와 상호보완적
                                     (npz만 읽음, GPU 불필요)
+      04_column_check.py          "CLS 말고 다른 토큰들도 그 지점을 보는가" — 03에서 찾은
+                                    스파이크(예: L12/img0의 patch 17)가 진짜 sink라면
+                                    197개 쿼리 전부가 거길 봐야 한다는 가설을 검증. 03과
+                                    반대 방향(고정 키, 가변 쿼리) (npz만 읽음, GPU 불필요)
 
   results/
     layer_sweep/                위 실험의 결과물 (npz/png/md)
@@ -263,6 +267,26 @@ block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마�
 (같은 자리에서 clean은 0.11, LaVAN은 거의 0으로 평범한 수준) 나머지는 전부 평평함을 직접
 확인했다 — top1_mass 같은 집계 지표가 아니라 "정말 그 위치 하나가 튀는 것"을 눈으로 보여주는
 가장 직접적인 증거.
+
+**CLS 말고 다른 토큰들도 patch 17을 보는가**: [`results/characterization/04_column_check_L12_img0_tok17.png`](results/characterization/04_column_check_L12_img0_tok17.png)
+(`04_column_check.py`) — 03의 발견은 "CLS 하나"의 관점이다. PatchFool 논문 주장(공격이
+attention을 특정 patch로 강하게 끌어당긴다)이 맞다면, CLS뿐 아니라 나머지 196개 patch
+쿼리도 patch 17을 봐야 한다. 실제로 확인해보니:
+
+| | CLS -> 17 | patch-쿼리 196개 평균 -> 17 | >0.3인 patch-쿼리 비율 |
+|---|---|---|---|
+| Clean | 0.113 | 0.110 | 0% |
+| **PatchFool** | **0.630** | **0.515** | **94.9%** |
+| LaVAN | 0.084 | 0.079 | 0% |
+
+균등분포 기준선은 1/197=0.005. PatchFool에서는 CLS뿐 아니라 거의 모든 쿼리 토큰(196개 중
+94.9%)이 patch 17에 0.3 이상의 attention을 준다 — 그림에서도 PatchFool 곡선(빨강)만 전체
+쿼리 인덱스에 걸쳐 0.4~0.7 사이에 머무르고, clean/LaVAN(파랑/초록)은 쿼리 인덱스와 무관하게
+0.05~0.15에 붙어있다. 즉 patch 17은 CLS만의 특이 현상이 아니라 **레이어 12에서 거의 모든
+토큰이 공유하는 진짜 attention sink**다 — PatchFool의 주장과 일치. (clean도 baseline보다는
+높은 0.11 정도를 보이는데, 이는 attention sink가 공격과 무관하게 후반 레이어에 자연적으로
+존재하는 현상이고, PatchFool은 그 자연 sink를 4.7배(0.11→0.51)까지 증폭시켜 거의 모든
+토큰을 하나로 결집시킨다고 해석할 수 있다.)
 
 **범위 제한**: 탐지 임계값/AUROC/flag 판정 없음(위 4번 항목의 "5×균등분포"도 설명용).
 레이어 결합·Dual-Gate 설계는 이 결과를 보고 다음 단계에서 논의한다.
