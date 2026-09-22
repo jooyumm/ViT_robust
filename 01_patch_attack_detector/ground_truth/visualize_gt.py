@@ -46,9 +46,12 @@ def main():
 
     out_dir = os.path.join(HERE, 'results')
     os.makedirs(out_dir, exist_ok=True)
+    clean_img = repr_by_group['clean']['images'][EXAMPLE_IMG_IDX]
     for g in ATTACKED_GROUPS:
+        adv_img = repr_by_group[g]['images'][EXAMPLE_IMG_IDX]
+        gt_cov = repr_by_group[g]['gt_coverage'][EXAMPLE_IMG_IDX]
         p = os.path.join(out_dir, f'{g}.png')
-        plot_gt_locations(repr_by_group, EXAMPLE_IMG_IDX, g, p)
+        plot_gt_locations(clean_img, adv_img, gt_cov, g, p, label=f'image {EXAMPLE_IMG_IDX}')
         print(f"Saved: {p}")
 
 

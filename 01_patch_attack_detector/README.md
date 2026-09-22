@@ -226,3 +226,35 @@ attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모�
 - `ground_truth/visualize_gt.py`: 위 둘을 이용해 PatchFool/LaVAN 공격이 어떻게 생겼는지
   예시 한 장씩만 보여준다(`results/patchfool.png`, `results/lavan.png`) — 체계적인 비교가
   아니라 "공격이 대충 이렇게 생겼다"를 보여주는 용도.
+
+## 04 — 공격 후 attention은 어디로 이동하는가?
+
+`experiments/characterization/04_attention_redistribution.py`는 기존
+`results/characterization/00_attention_data_n100.npz`만 읽는 CPU 분석이다.
+공격을 다시 만들거나 다른 실행의 성공/실패 결과를 섞지 않는다.
+
+```bash
+python 01_patch_attack_detector/experiments/characterization/04_attention_redistribution.py
+```
+
+출력: `results/characterization/04_attention_redistribution/`.
+
+- `attention_redistribution_overview.png`: 전체 100장의 최댓값 patch 위치 변경률,
+  대표 5장의 공격 영역·나머지 patch·CLS attention 증감, 분포의 총변동거리.
+  CLS query와 전체 query 평균을 구분한다. 음영은 대표 표본의 min–max이다.
+- `*_example*_spatial_attention_shift.png`: 원본·공격 이미지와
+  레이어별 clean attention / attack attention / 차이 지도. 청록색 테두리는 실제 변경된
+  patch 토큰, 차이 지도의 빨강은 증가, 파랑은 감소이다. 기본 L1/L6/L12이며
+  `--layers 3 9 12`처럼 지정할 수 있다.
+- `argmax_location_changes.csv`, `regional_attention_changes.csv`,
+  `per_token_attention_changes.csv`: 그림의 수치 및 전체 레이어·토큰별 변화량.
+
+분포는 head 평균 raw attention을 사용하며 CLS를 제거하거나 patch 부분을 재정규화하지
+않는다. 공격 영역 + 비공격 영역 + CLS의 변화량 합은 0이다. 공격 영역은 coverage > 0인
+토큰 전체로 정의한다. 부분적으로 공격받은 LaVAN 토큰도 포함하므로 픽셀별 중요도가 아니다.
+총변동거리는 CLS를 포함한 `0.5 × Σ|attack − clean|`이다.
+
+**범위**: 전체 표본의 토큰 분포·GT는 저장되어 있지 않아서 공간적 이동 분석은 대표
+5장에 한정된다. 최댓값 위치 변경률만 100장이다. 표본 ID와 정답 label이 없는 기존
+아카이브로 공격 성공 여부나 인과적 정보 전달 경로를 해석하지 않는다. 별도 `.log` 파일은
+생성하지 않는다.

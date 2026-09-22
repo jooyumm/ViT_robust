@@ -28,6 +28,7 @@ from src.dataset import get_dataloader
 from attention_lib import collect_full_layer_attn, full_row
 from attack_gen import chunked_patch_fool
 from coverage import gt_coverage, gt_patch_summary
+from draw_boxes import plot_gt_locations
 
 
 def predict(model, images, chunk=20):
@@ -94,10 +95,12 @@ def main():
     out_dir = HERE.replace('/experiments/', '/results/', 1)
     os.makedirs(out_dir, exist_ok=True)
 
-    cases = [('Attack succeeded (misclassified)', i_success),
-             ('Attack failed (still correct)', i_fail)]
+    # 파일명은 이미지 번호가 아니라 상태로 남긴다 -- 번호는 실행마다 바뀔 수 있어서
+    # 뭘 보고 있는지 파일명만으로는 알 수 없다.
+    cases = [('Attack succeeded (misclassified)', i_success, 'misclassified'),
+             ('Attack failed (still correct)', i_fail, 'still_correct')]
     fig, axes = plt.subplots(1, 2, figsize=(15, 5))
-    for ax, (title, idx) in zip(axes, cases):
+    for ax, (title, idx, _) in zip(axes, cases):
         clean_row = attn_row_at_layer(model, images[idx], args.layer)
         adv_row = attn_row_at_layer(model, adv[idx], args.layer)
         cov = gt_coverage(images[idx].detach().cpu(), adv[idx].detach().cpu())
@@ -123,6 +126,18 @@ def main():
     plt.savefig(p, dpi=150)
     plt.close(fig)
     print(f"Saved: {p}")
+
+    # 성공/실패 이미지 각각 GT 박스(공격이 실제로 건드린 patch)를 표시해서 따로 저장 --
+    # ground_truth/draw_boxes.py를 그대로 재사용(GT 폴더가 "다른 실험에서도 가져다 쓰는
+    # 라이브러리"라는 존재 이유 그대로).
+    for title, idx, suffix in cases:
+        label = f'{title} (true={int(labels_cpu[idx])}, adv_pred={int(adv_pred[idx])})'
+        clean_np = images[idx].detach().cpu().numpy()
+        adv_np = adv[idx].detach().cpu().numpy()
+        cov = gt_coverage(images[idx].detach().cpu(), adv[idx].detach().cpu())
+        p = os.path.join(out_dir, f'03_outcome_{suffix}.png')
+        plot_gt_locations(clean_np, adv_np, cov, 'patchfool', p, label=label)
+        print(f"Saved: {p}")
 
     # 어떤 이미지를 골랐는지는 seed/파라미터가 바뀌면 달라질 수 있어서, 실행할 때마다
     # 여기 다시 저장한다(덮어씀) -- 로그를 뒤지지 않아도 항상 최신 선택이 파일로 남는다.

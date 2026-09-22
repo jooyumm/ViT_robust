@@ -1,0 +1,49 @@
+attack,query,block,n,changed_count,changed_fraction
+patchfool,CLS,1,100,4,0.04
+patchfool,CLS,2,100,55,0.55
+patchfool,CLS,3,100,79,0.79
+patchfool,CLS,4,100,77,0.77
+patchfool,CLS,5,100,20,0.2
+patchfool,CLS,6,100,75,0.75
+patchfool,CLS,7,100,84,0.84
+patchfool,CLS,8,100,81,0.81
+patchfool,CLS,9,100,74,0.74
+patchfool,CLS,10,100,55,0.55
+patchfool,CLS,11,100,38,0.38
+patchfool,CLS,12,100,24,0.24
+patchfool,All queries,1,100,31,0.31
+patchfool,All queries,2,100,41,0.41
+patchfool,All queries,3,100,44,0.44
+patchfool,All queries,4,100,69,0.69
+patchfool,All queries,5,100,62,0.62
+patchfool,All queries,6,100,77,0.77
+patchfool,All queries,7,100,77,0.77
+patchfool,All queries,8,100,80,0.8
+patchfool,All queries,9,100,77,0.77
+patchfool,All queries,10,100,72,0.72
+patchfool,All queries,11,100,57,0.57
+patchfool,All queries,12,100,26,0.26
+lavan,CLS,1,100,0,0.0
+lavan,CLS,2,100,0,0.0
+lavan,CLS,3,100,16,0.16
+lavan,CLS,4,100,25,0.25
+lavan,CLS,5,100,15,0.15
+lavan,CLS,6,100,1,0.01
+lavan,CLS,7,100,0,0.0
+lavan,CLS,8,100,0,0.0
+lavan,CLS,9,100,1,0.01
+lavan,CLS,10,100,2,0.02
+lavan,CLS,11,100,32,0.32
+lavan,CLS,12,100,28,0.28
+lavan,All queries,1,100,1,0.01
+lavan,All queries,2,100,3,0.03
+lavan,All queries,3,100,15,0.15
+lavan,All queries,4,100,59,0.59
+lavan,All queries,5,100,26,0.26
+lavan,All queries,6,100,3,0.03
+lavan,All queries,7,100,0,0.0
+lavan,All queries,8,100,1,0.01
+lavan,All queries,9,100,2,0.02
+lavan,All queries,10,100,1,0.01
+lavan,All queries,11,100,1,0.01
+lavan,All queries,12,100,26,0.26

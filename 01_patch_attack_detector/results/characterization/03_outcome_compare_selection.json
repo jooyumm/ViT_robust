@@ -1,0 +1,18 @@
+{
+  "seed": 42,
+  "num_samples": 100,
+  "layer": 12,
+  "clean_accuracy": 0.8700000047683716,
+  "success": {
+    "image": 0,
+    "true": 750,
+    "clean_pred": 750,
+    "adv_pred": 761
+  },
+  "failure": {
+    "image": 11,
+    "true": 670,
+    "clean_pred": 670,
+    "adv_pred": 670
+  }
+}

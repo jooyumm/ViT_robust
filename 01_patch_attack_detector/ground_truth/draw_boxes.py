@@ -53,8 +53,11 @@ def _draw_bbox(ax, gt_patches, color, ppl=PPL, patch_size=PATCH_SIZE, lw=2.0):
                             fill=False, edgecolor=color, lw=lw))
 
 
-def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01):
+def plot_gt_locations(clean_img, adv_img, gt_cov, group, out_path, label=None, gt_min_frac=0.01):
     """공격이 실제로 건드린 patch(들)을 [clean | adv | diff 히트맵] 세 장에 표시한다.
+    clean_img/adv_img: (3,H,W) 텐서 한 장. gt_cov: (196,) coverage.gt_coverage 출력.
+    label: 제목에 덧붙일 설명(예: "image 4", "still correct (true=670)") — 없으면 생략.
+
     clean/adv 두 패널은 배경 patch 격자는 그대로 두되(patch 경계 참고용), GT 표시는
     patch별로 따로 박스를 치지 않고 **전부를 감싸는 사각형 하나**로만 그린다 — LaVAN처럼
     여러 patch에 걸쳐 있을 때 patch마다 박스를 치면 그 자체로 3x3 격자처럼 보여서 오히려
@@ -64,16 +67,7 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
     패널과 같은 위치인지 바로 비교된다). PatchFool은 항상 patch 정확히 1개뿐이라 bbox와
     개별 patch 박스가 어차피 같은 모양이 되고, 라벨도 필요 없어 안 붙인다(title에 patch
     번호는 그대로 나온다). GT는 순전히 coverage.gt_coverage(픽셀 diff)로 계산한 것이고,
-    attention이나 탐지기 결과는 이 그림에 전혀 들어가지 않는다.
-    repr_by_group[group]['images'/'gt_coverage']가 없으면(구버전 npz) 조용히 건너뛴다."""
-    if 'images' not in repr_by_group.get('clean', {}) or \
-       'images' not in repr_by_group.get(group, {}) or \
-       'gt_coverage' not in repr_by_group.get(group, {}):
-        return False
-
-    clean_img = repr_by_group['clean']['images'][img_idx]
-    adv_img = repr_by_group[group]['images'][img_idx]
-    gt_cov = repr_by_group[group]['gt_coverage'][img_idx]
+    attention이나 탐지기 결과는 이 그림에 전혀 들어가지 않는다."""
     gt_patches = gt_patch_summary(gt_cov, min_frac=gt_min_frac)
     show_pct = (group != 'patchfool')
 
@@ -90,8 +84,8 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
         if gt_patches:
             if i == 2:   # diff: patch별 상세(경계 + 겹침 %)
                 for p, frac in gt_patches:
-                    label = f'{frac:.0%}' if show_pct else None
-                    _draw_patch_box(ax, p, box_color, label=label)
+                    patch_label = f'{frac:.0%}' if show_pct else None
+                    _draw_patch_box(ax, p, box_color, label=patch_label)
             else:        # clean/adv: 감싸는 사각형 하나만
                 _draw_bbox(ax, gt_patches, box_color)
         ax.set_xticks([]); ax.set_yticks([])
@@ -101,7 +95,8 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
         gt_str = ', '.join(f'{p}({frac:.0%})' for p, frac in gt_patches) or 'none'
     else:
         gt_str = ', '.join(str(p) for p, _ in gt_patches) or 'none'
-    fig.suptitle(f'{GROUP_LABELS[group]} image {img_idx} — GT attacked patch(es): {gt_str}')
+    title = f'{GROUP_LABELS[group]}' + (f' — {label}' if label else '')
+    fig.suptitle(f'{title} — GT attacked patch(es): {gt_str}')
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close(fig)
