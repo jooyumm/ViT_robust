@@ -59,8 +59,11 @@ ViT_robust/
     characterization/            레이어x헤드x전체토큰 raw attention 특성 관찰(탐지기 설계
                                   아님) — "테스트하고 싶은 것"별로 파일을 나눴다:
       attention_lib.py             저수준: 헤드별 attention hook + 분포/집중도 계산 함수
+      gt_lib.py                    저수준: 공격이 실제로 건드린 patch를 clean/adv 픽셀
+                                    diff로 계산하는 ground truth 함수(attention 추정 아님)
       00_extract_attention.py         GPU 필요한 유일한 단계. clean/PatchFool/LaVAN 생성 +
-                                    attention 추출 + 지표 계산 -> npz 하나로 저장
+                                    attention 추출 + 지표 계산 + GT(대표 이미지 원본/공격
+                                    이미지 픽셀, gt_coverage) -> npz 하나로 저장
       data_io.py                   그 npz를 다시 불러오는 로더 (아래 두 스크립트가 공유)
       plotting.py                  두 스크립트가 공유하는 그림 함수
       01_concentration.py        "얼마나 몰리는가" — 히스토그램/헤드별 편차/레이어별 비교
@@ -76,6 +79,12 @@ ViT_robust/
                                     스파이크(예: L12/img0의 patch 17)가 진짜 sink라면
                                     197개 쿼리 전부가 거길 봐야 한다는 가설을 검증. 03과
                                     반대 방향(고정 키, 가변 쿼리) (npz만 읽음, GPU 불필요)
+      05_gt_check.py              "attention이 정말 공격당한 자리로 몰리는가" — 04까지는
+                                    맞는지 한 장씩 손으로 diff해서 확인했는데, 이제 그걸
+                                    자동화: GT(gt_lib.py, 픽셀 diff)와 관측된 attention
+                                    argmax를 대표 이미지 전부(기본 5장)에 대해 자동 대조,
+                                    이미지별 원본/공격/diff + GT-vs-관측 오버레이 그림도
+                                    저장 (npz만 읽음, GPU 불필요)
 
   results/
     layer_sweep/                위 실험의 결과물 (npz/png/md)
@@ -291,6 +300,41 @@ attention을 특정 patch로 강하게 끌어당긴다)이 맞다면, CLS뿐 아
 높은 0.11 정도를 보이는데, 이는 attention sink가 공격과 무관하게 후반 레이어에 자연적으로
 존재하는 현상이고, PatchFool은 그 자연 sink를 4.7배(0.11→0.51)까지 증폭시켜 거의 모든
 토큰을 하나로 결집시킨다고 해석할 수 있다.)
+
+## GT 검증 시스템 (`gt_lib.py`, `05_gt_check.py`) — "정말 그런지" 눈대중이 아니라 자동 대조
+
+위 patch 17 결과까지는 image 0 한 장을 놓고 clean/adv를 직접 diff하는 일회성 스크립트로
+확인했다. 이걸 매번 손으로 하지 않도록, **공격이 실제로 어느 patch를 얼마나 건드렸는지를
+pixel diff로 계산한 ground truth**를 파이프라인에 내장했다:
+
+- `gt_lib.gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서(추정 아님) 196개 patch
+  각각에서 실제로 바뀐 픽셀 비율(0~1)을 계산. PatchFool은 정확히 patch 1개만 1.0, 나머지는
+  0. LaVAN은 16px 그리드에 정렬 안 된 위치에 놓이므로 여러 patch에 걸쳐 부분 비율로 나뉜다.
+- `00_extract_attention.py`가 대표 이미지 **5장**(기존 2장에서 늘림)에 대해 원본 픽셀
+  (`repr_images`)과 `gt_coverage`를 npz에 같이 저장 — 재실행 없이 언제든 "원본 vs 공격
+  이미지"를 다시 볼 수 있는 재료.
+- `05_gt_check.py`: 이 GT와 그 레이어의 관측된 attention argmax(`argmax_col_avg`)를 대표
+  이미지 5장 x 2개 공격(PatchFool/LaVAN) 전체에 대해 자동 대조하고, 이미지마다 [clean |
+  adv | diff 히트맵]에 GT patch(노란 박스)와 관측 argmax(하늘색 박스)를 겹쳐 그린
+  `05_gt_overlay_{group}_img{i}_L{layer}.png` 10장 + 대조표
+  `05_gt_check_L12_n100.md`를 저장.
+
+**결과 (L=12)**: PatchFool 5장 중 4장 일치([`05_gt_overlay_patchfool_img0_L12.png`](results/characterization/05_gt_overlay_patchfool_img0_L12.png)처럼 GT와 관측이 정확히 같은 patch), 나머지 1장은
+[`05_gt_overlay_patchfool_img1_L12.png`](results/characterization/05_gt_overlay_patchfool_img1_L12.png)에서 보듯 GT(25)와 관측(23)이 같은 행에서 2칸 차이 나는 "근접
+미스"였다. **LaVAN은 5장 중 1장만 일치** — [`05_gt_overlay_lavan_img2_L12.png`](results/characterization/05_gt_overlay_lavan_img2_L12.png)를 보면 LaVAN이
+건드린 3x3 블록(노란 박스, 물속 배경이라 정보량이 적은 영역)과 실제 attention이 몰리는
+곳(하늘색 박스)이 완전히 다른 위치다.
+
+**중요한 재해석**: n=100 전체에서 `argmax_col_avg`(L=12)의 최빈 patch를 세어보면 clean조차
+patch 25/170/16/179가 각각 16/14/10/10회(100장 중)로 반복 등장한다 — **이미지 내용과
+무관하게 특정 patch 위치로 attention이 쏠리는 "고정 sink"가 이 ViT에 이미 존재**하고,
+PatchFool이 `attn_layer_idx=4`에서 고르는 patch(16, 25 등)가 우연히 이 고정 sink 후보와
+자주 겹친다. 즉 PatchFool의 4/5 일치율은 "공격이 없던 곳에 완전히 새로운 sink를 만든다"
+보다는 "이미 sink가 될 가능성이 있는 자리를 골라(레이어 4 CLS attention 기준) 그 sink를
+극단적으로 증폭시킨다"(위 column_check의 0.11→0.51, 4.7배)에 더 가깝다. LaVAN은 attention을
+전혀 신경 쓰지 않고 위치를 랜덤으로 골라 공격하므로 이 고정 sink와 겹칠 확률이 낮고, 그
+결과 attention을 자기 위치로 끌어오지 못한다(1/5) — patch_select='Attn'(PatchFool)과
+랜덤 위치(LaVAN)의 차이가 "공격이 attention을 실제로 지배하는가"를 가르는 핵심 변수라는 뜻.
 
 **범위 제한**: 탐지 임계값/AUROC/flag 판정 없음(위 4번 항목의 "5×균등분포"도 설명용).
 레이어 결합·Dual-Gate 설계는 이 결과를 보고 다음 단계에서 논의한다.

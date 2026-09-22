@@ -24,6 +24,11 @@ detector/topk_mass_v1.py의 CLS-row·헤드평균 전용 함수는 쓰지 않는
   - full_avg의 대표 이미지 n_repr장분(197x197 전체 헤드평균 attention 행렬 그대로, 레이어별
     — 04_column_check.py가 "CLS 말고 다른 토큰들도 특정 patch를 보는가"를 확인하려고
     임의의 key 열(column)을 뽑아 쓴다. row_full_avg는 이 행렬의 0번째 행과 같다)
+  - repr_images: 대표 이미지 n_repr장분의 실제 (3,224,224) 픽셀 텐서 그대로(clean/patchfool/
+    lavan 각각) — "원본 vs 공격 당한 이미지"를 눈으로/코드로 직접 볼 수 있는 GT 재료
+  - gt_coverage(patchfool/lavan만): 대표 이미지 n_repr장분, (n_repr, 196) — 공격이 실제로
+    "어느 patch를 얼마나 건드렸는지"를 clean/adv 픽셀을 diff해서 계산한 ground truth(추측
+    아님, gt_lib.py 참고). 05_gt_check.py가 이걸 관측된 attention argmax와 직접 비교한다.
 
 사용법:
   python 00_extract_attention.py --num_samples 100 --seed 42 --chunk 20
@@ -52,6 +57,7 @@ from attention_lib import (
     collect_full_layer_attn, row_distribution, col_distribution, full_row,
     top1_mass, normalized_entropy, gini_coefficient,
 )
+from gt_lib import gt_coverage
 
 GROUPS = ('clean', 'patchfool', 'lavan')
 
@@ -174,7 +180,9 @@ def main():
     parser.add_argument('--attn_layer_idx', type=int, default=4, help='PatchFool 타겟 레이어')
     parser.add_argument('--lavan_patch_ratio', type=float, default=0.02)
     parser.add_argument('--lavan_steps', type=int, default=40)
-    parser.add_argument('--n_repr', type=int, default=2, help='시각화용 대표 이미지 수')
+    parser.add_argument('--n_repr', type=int, default=5,
+                        help='시각화/GT 확인용 대표 이미지 수 (05_gt_check.py가 여러 장에 '
+                             '걸쳐 GT-vs-관측 일치율을 보려면 2장으론 부족해서 5로 늘림)')
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -217,6 +225,18 @@ def main():
         npz_payload[f'{name}__col_ph_repr'] = col_ph
         npz_payload[f'{name}__row_full_avg_repr'] = row_full_avg
         npz_payload[f'{name}__full_avg_repr'] = full_avg
+
+        n_take = min(args.n_repr, images_by_group[name].shape[0])
+        npz_payload[f'{name}__repr_images'] = images_by_group[name][:n_take].detach().cpu().numpy()
+
+        if name != 'clean':
+            # 공격이 실제로 어느 patch를 얼마나 건드렸는지 clean과 diff해서 GT를 만든다
+            # (추측/눈대중 아님 -- gt_lib.gt_coverage 참고)
+            gt = np.stack([
+                gt_coverage(images[i].detach().cpu(), images_by_group[name][i].detach().cpu())
+                for i in range(n_take)
+            ])
+            npz_payload[f'{name}__gt_coverage_repr'] = gt
 
         med = np.median(metrics['top1_row_avg'], axis=0)
         print(f"  top1_row_avg median by layer: " + ", ".join(f"{v:.3f}" for v in med))
