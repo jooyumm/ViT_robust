@@ -23,14 +23,6 @@ Dual-Gate 등), 두 번째 버전이 생기기 전에 미리 버전이 드러나
 
 ## 핵심 결과 요약
 
-**레이어별 AUROC/FPR/recall sweep** (`experiments/layer_sweep/`, PatchFool, n=250/seed=42,
-`02_patch_switch_defense`의 system_comparison과 동일 표본·공격): AUROC-vs-layer 곡선은 **단조증가가
-아니다** — L=1(0.530)에서 L=5(0.734)까지 오르다 L=7~9(0.522~0.554, chance 근처)로 다시
-가라앉은 뒤 L=11(0.820)/L=12(0.846)에서 급등한다. "L=12까지 봐야 신호가 분리된다"는 주장은
-**부분적으로만 맞다** — 정확히는 "L=11~12 두 레이어에서만 신호가 뚜렷하고, 중간 레이어(7~10)는
-오히려 chance 수준으로 꺼진다"가 더 정확한 설명이다. 자세한 내용은 아래 "레이어별 Top-K Mass
-sweep" 절 참고.
-
 **Raw attention 특성 관찰** (`experiments/characterization/`, 탐지기 설계 아님 — 순수 관찰):
 질문은 딱 하나 — "공격이 정말 토큰 하나로 쏠리는가, 모든 레이어에서 그런가". 답은 **"L=11~12
 에서만 그렇다, 나머지 레이어는 아니다"**. LaVAN은 어느 레이어에서도 안 쏠린다. 자세한 내용은
@@ -50,44 +42,43 @@ ViT_robust/
                                   L=12, top4_mass, top-1 argmax) — 위 "메커니즘" 참고
 
   experiments/
-    layer_sweep/
-      layer_sweep_test.py         L=1~12 전체의 AUROC/FPR/recall sweep + 얕은 레이어 히트맵
     characterization/            "공격이 토큰 하나로 쏠리는가, 모든 레이어에서 그런가"만
-                                  본다(탐지기 설계 아님):
+                                  본다(탐지기 설계 아님), 번호는 실행 순서:
       attention_lib.py             저수준: 헤드별 attention hook + 분포/집중도 계산 함수
-      attack_gen.py                 PatchFool/LaVAN 공격 생성(00/05가 공유, 재현성용)
+      attack_gen.py                 PatchFool/LaVAN 공격 생성(00/03이 공유, 재현성용)
       00_extract_attention.py         GPU 필요한 유일한 단계. clean/PatchFool/LaVAN 생성 +
                                     attention 추출 + GT(gt_coverage) -> npz 하나로 저장
       data_io.py                   그 npz를 다시 불러오는 로더
-      plotting.py                  01/03이 공유하는 그림 함수
+      plotting.py                  01/02가 공유하는 그림 함수
       01_concentration.py        레이어별 top-1 mass(한 토큰이 가져가는 비율) — 핵심 질문에
                                     대한 정량적 답 (npz만 읽음, GPU 불필요)
-      03_token_bars.py            대표 이미지 1장 x 레이어 1개로 "진짜 토큰 하나가 튀는지"
+      02_token_bars.py            대표 이미지 1장 x 레이어 1개로 "진짜 토큰 하나가 튀는지"
                                     눈으로 확인 (npz만 읽음, GPU 불필요)
-      05_attack_outcome_compare.py  공격 성공(오분류)/실패(여전히 정답) 이미지를 하나씩
+      03_attack_outcome_compare.py  공격 성공(오분류)/실패(여전히 정답) 이미지를 하나씩
                                     뽑아 attention을 비교 — attention 왜곡이 실제 오분류와
-                                    같이 가는지 확인 (GPU 필요, 공격 재생성)
+                                    같이 가는지 확인 (GPU 필요, 공격 재생성). 어느 이미지를
+                                    골랐는지는 실행할 때마다 03_outcome_compare_selection.json
+                                    에 다시 저장(덮어씀) — 파라미터가 바뀌면 선택도 바뀔 수
+                                    있어서 로그 대신 파일로 남긴다
 
-  ground_truth/                  "공격이 실제로 어디를 건드렸는가"(픽셀 diff)만 확정하는
-                                  시스템 — attention이나 탐지기 출력과 비교하는 건 여기 안
-                                  한다(그건 이 GT를 갖다 쓰는 별도의 나중 단계). characterization
-                                  전용이 아니라 이 프로젝트 최상위에 둬서 앞으로 detector/
-                                  자체를 테스트할 때도 그대로 재사용한다.
-    gt_lib.py                      저수준: clean/adv 픽셀 diff로 "어느 patch를 얼마나
+  ground_truth/                  "공격이 실제로 어디를 건드렸는가"(픽셀 diff)를 계산해주는
+                                  라이브러리 — attention이나 탐지기 출력과 비교하는 로직은
+                                  여기 없다. characterization 하나에 묶인 게 아니라, 앞으로
+                                  어떤 실험이든(탐지기 테스트 등) GT가 필요하면 가져다 쓰는
+                                  공용 코드라서 이 프로젝트 최상위에 둔다.
+    coverage.py                    저수준: clean/adv 픽셀 diff로 "어느 patch를 얼마나
                                     건드렸는지"(196차원 coverage)를 계산하는 ground truth 함수
-    gt_plot.py                      GT로 확정된 patch(노란 박스, 겹침 %)를 원본/공격/diff
-                                    이미지 위에 그리는 그림 함수 — attention 정보 없음
-    visualize_gt.py                실행 스크립트. characterization의 00_extract_attention.py가
-                                    저장한 npz(gt_coverage/repr_images)를 읽어 대표 이미지
-                                    5장 x 2개 공격 전부의 GT를 표+그림으로 저장
-                                    (npz만 읽음, GPU 불필요)
+    draw_boxes.py                   GT로 확정된 patch를 박스로 원본/공격/diff 이미지 위에
+                                    그리는 그림 함수 — attention 정보 없음
+    visualize_gt.py                실행 스크립트. 공격 예시 하나씩(patchfool.png/lavan.png)
+                                    만 보여주는 용도 — characterization의
+                                    00_extract_attention.py가 저장한 npz만 읽는다
+                                    (GPU 불필요)
     results/
-      gt_summary_n100.md            대표 이미지별 GT patch(겹침 %) 표
-      patchfool/img{0..4}.png       공격별로 나눈 GT 그림
-      lavan/img{0..4}.png
+      patchfool.png                 PatchFool 공격 예시 1장
+      lavan.png                     LaVAN 공격 예시 1장
 
   results/
-    layer_sweep/                위 실험의 결과물 (npz/png/md)
     characterization/           위 실험들의 결과물 (npz/png/md, GT 관련 제외 — ground_truth/results/ 참고)
 ```
 
@@ -127,65 +118,6 @@ local_switch_posenc_ablation}/*_test.py` 3곳이다. `defense/all_switch.py`/
 패키지 이름 충돌 방지를 위한 sys.path 순서" 문제는 더 이상 없다 — `02_patch_switch_defense`와
 `01_patch_attack_detector` 둘 다 같은 `ViT_robust/src/`를 가리키므로 순서 무관하게 항상 같은 곳으로
 resolve된다.
-
-## 레이어별 Top-K Mass sweep (`experiments/layer_sweep/`)
-
-지금까지 `02_patch_switch_defense`에서 확인된 지점은 L=6(AUROC 0.639)과 L=12(0.879, §1, n=30
-clean/LaVAN/PatchFool 각 30장 기준) 두 개뿐이었다. 이 실험은 `detector/topk_mass_v1.py`의
-`collect_layer_attn`/`raw_at_layer`/`top4_mass`를 레이어 인덱스만 바꿔가며 그대로 재사용해
-L=1~12 전체 곡선을 채운다(새 탐지 로직 없음). `system_comparison`과 동일한 표본·공격
-(n=250, seed=42, calibration 100/eval 150, PatchFool attn_layer_idx=4, chunk=20)을 써서
-L=12 행이 system_comparison의 발표치와 직접 대조되는 내장 sanity check 역할을 하게 했다.
-
-**방법**: clean/adv 이미지 각각 `collect_layer_attn`을 **한 번씩만** 호출(forward 1회로
-12개 block 전부의 attention이 이미 나오므로 레이어마다 다시 forward하지 않음). 레이어별로
-AUROC는 eval 150개(held-out)만으로, threshold는 calibration 100개로만 Youden's J로 정하고,
-FPR/recall은 그 threshold로 eval에서 계산(system_comparison과 동일한 순환평가 방지 원칙).
-
-**결과** (job 2302720, RTX 4090):
-
-| L | AUROC | threshold | FPR | recall |
-|---|---|---|---|---|
-| 1 | 0.530 | 0.0482 | 0.600 (90/150) | 0.627 (94/150) |
-| 2 | 0.637 | 0.0562 | 0.413 (62/150) | 0.580 (87/150) |
-| 3 | 0.666 | 0.0492 | 0.547 (82/150) | 0.753 (113/150) |
-| 4 | 0.695 | 0.0561 | 0.273 (41/150) | 0.567 (85/150) |
-| 5 | 0.734 | 0.0643 | 0.360 (54/150) | 0.667 (100/150) |
-| 6 | 0.646 | 0.1164 | 0.320 (48/150) | 0.560 (84/150) |
-| 7 | 0.554 | 0.2587 | 0.427 (64/150) | 0.513 (77/150) |
-| 8 | 0.522 | 0.3756 | 0.620 (93/150) | 0.680 (102/150) |
-| 9 | 0.544 | 0.4798 | 0.480 (72/150) | 0.573 (86/150) |
-| 10 | 0.647 | 0.4773 | 0.313 (47/150) | 0.553 (83/150) |
-| 11 | 0.820 | 0.3874 | 0.133 (20/150) | 0.700 (105/150) |
-| 12 | 0.846 | 0.5116 | **0.133 (20/150)** | **0.727 (109/150)** |
-
-95% Wilson CI를 포함한 전체 표는
-[`results/layer_sweep/auroc_fpr_recall_table_n250.md`](results/layer_sweep/auroc_fpr_recall_table_n250.md),
-그래프는 [`results/layer_sweep/auroc_vs_layer_n250.png`](results/layer_sweep/auroc_vs_layer_n250.png)
-참고. **L=12 sanity check**: threshold=0.5116, FPR=0.133, recall=0.727 —
-`02_patch_switch_defense`의 system_comparison 발표치(threshold=0.5116, FPR=13.3%, recall=72.7%)와
-완전히 일치(같은 표본·같은 공격이므로 예상된 결과, PatchFool 공격 생성이 두 스크립트에서
-결정론적으로 재현됨을 추가로 확인해줌 — `src/`를 자체 사본으로, 그다음 공유
-`ViT_robust/src/`로 바꾼 뒤에도 매번 다시 확인했다).
-
-**해석**: 곡선은 단조증가가 아니라 두 구간으로 나뉜다 — L=1→5에서 완만히 오르다(0.530→0.734)
-L=6→9에서 chance 근처까지 꺼지고(최저 L=8=0.522), L=10부터 다시 올라 L=11(0.820)/L=12(0.846)
-에서 급등한다. PatchFool 공격이 `attn_layer_idx=4`를 직접 타겟하는 걸 감안하면 L=4~5 부근의
-국소적 상승은 공격이 그 레이어의 attention을 직접 왜곡하기 때문일 가능성이 있고, L=11~12의
-급등은 그와는 다른(더 늦은 레이어에 누적된) 신호일 가능성이 있다 — 두 메커니즘이 같은지는
-이 sweep만으로는 판단 불가, 후속 분석 필요. **결론: "L=12까지 봐야 신호가 분리된다"는 절반만
-맞다** — 정확히는 "L=11~12 두 레이어에서만 신호가 뚜렷하고 중간 레이어는 chance 수준으로
-꺼진다"이다.
-
-**얕은 레이어 정성적 히트맵** (clean 이미지 2장, L=1~3):
-[`results/layer_sweep/shallow_layer_heatmaps_n250.png`](results/layer_sweep/shallow_layer_heatmaps_n250.png).
-"얕은 층은 인접 토큰에 국소적으로 집중된다"는 예상과 달리, 이 2장에서는 L=1이 오히려 이미지
-가장자리(모서리) 패치에 집중되는 경향을 보였고, L=2/L=3에서는 두 이미지 모두 특정 고정
-위치(우측 가장자리 근처)에 유난히 밝은 단일 패치가 나타났다 — ViT의 attention sink류 현상과
-일관된 패턴으로 보이나, 표본이 2장뿐이라 일반화하려면 더 봐야 한다.
-
-**범위 제한 (다음 단계로 미룸)**: 레이어를 어떻게 결합할지(단일 채택/OR/누적합)나 Dual-Gate
-설계는 이번 sweep 결과를 보고 나서 논의한다.
 
 ## Raw attention 특성 관찰 (`experiments/characterization/`)
 
@@ -241,12 +173,11 @@ attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모�
 2. **LaVAN은 어느 레이어에서도 안 쏠린다** — 모든 레이어에서 중앙값이 clean과 거의 겹친다
    (최대 편차 L=12에서 −0.026). raw attention만으로 LaVAN을 못 잡는 이유다.
    [`results/characterization/01_hist_top1_row_by_layer.png`](results/characterization/01_hist_top1_row_by_layer.png)의
-   L=11/L=12 패널을 보면 PatchFool이 긴 꼬리(최대 0.6~0.8)를 만드는데, 이게 layer_sweep에서
-   recall이 100%가 아니라 72.7%인 이유와 같은 그림이다(쏠리는 이미지와 안 쏠리는 이미지가
-   섞여 있음).
+   L=11/L=12 패널을 보면 PatchFool이 긴 꼬리(최대 0.6~0.8)를 만드는데, 쏠리는 이미지와
+   안 쏠리는 이미지가 섞여 있다는 뜻이다(전부가 쏠리는 게 아님).
 
 **진짜 토큰 하나가 튀는지 예시로 확인**:
-[`results/characterization/03_token_bars_L12_img0.png`](results/characterization/03_token_bars_L12_img0.png) —
+[`results/characterization/02_token_bars_L12_img0.png`](results/characterization/02_token_bars_L12_img0.png) —
 197개 토큰을 정렬 없이 그대로 그려서, image 0/L=12에서 PatchFool만 **token 99**(patch 98)
 에서 0.453까지 치솟고(clean 0.180, LaVAN 0.107) 나머지는 평평함을 확인했다. 이 자리가
 진짜 공격당한 patch인지도 `ground_truth/`로 확정해 뒀다 — 정확히 patch 98(0-indexed)에서만
@@ -255,12 +186,14 @@ attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모�
 **범위 제한**: 탐지 임계값/AUROC/flag 판정 없음. 레이어 결합·Dual-Gate 설계는 이 결과를
 보고 다음 단계에서 논의한다.
 
-## attention 왜곡이 실제 오분류와 같이 가는가 (`05_attack_outcome_compare.py`)
+## attention 왜곡이 실제 오분류와 같이 가는가 (`03_attack_outcome_compare.py`)
 
 지금까지는 "attention이 튀는가"만 봤다. 진짜 궁금한 건 그게 **공격 성공(오분류)**과
 관련 있는가다. n=100 중 clean일 때 맞았던 87장을 공격 후 결과로 나누면 오분류 79장,
 여전히 정답 8장 — 이 중 한 장씩 뽑아 L=12 attention을 비교했다
-([`results/characterization/05_outcome_compare_L12.png`](results/characterization/05_outcome_compare_L12.png)):
+([`results/characterization/03_outcome_compare_L12.png`](results/characterization/03_outcome_compare_L12.png)).
+어느 이미지를 골랐는지는 `results/characterization/03_outcome_compare_selection.json`에
+실행할 때마다 다시 저장된다(파라미터가 바뀌면 후보 이미지도 달라질 수 있어서):
 
 - **공격 성공 (image 0, 이불 사진, true=750→오분류 761)**: GT patch 16에서 clean 0.11 →
   PatchFool 0.46으로 **4배 이상 증폭**.
@@ -276,22 +209,20 @@ attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모�
 자연 sink와 다른 자리를 공격했다가 실패한 사례)와 같은 방향의 관찰이다. 표본 2장뿐인
 일회성 확인이라 일반화하려면 더 봐야 한다.
 
-## GT 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
+## GT 라이브러리 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
 
-**공격이 실제로 어느 patch를 얼마나 건드렸는지를 pixel diff로 계산한 ground truth**를
-파이프라인에 내장했다. `ground_truth/`의 역할은 딱 이것뿐이다 — attention이나 탐지기
-출력과 비교하는 로직은 여기 없다(그건 이 GT를 가져다 쓰는 별도의 나중 단계).
-characterization 전용이 아니라 이 프로젝트 최상위에 둬서, 앞으로 탐지기(`detector/`)
-자체를 테스트할 때도("탐지가 가리키는 위치 vs 실제 공격 위치") 같은 GT를 재사용한다:
+**공격이 실제로 어느 patch를 얼마나 건드렸는지를 pixel diff로 계산하는 ground truth
+코드**다. 이 폴더는 characterization 하나에 속한 게 아니라, 앞으로 어떤 실험이든(탐지기
+테스트 등) "공격이 진짜 어디 있었는지"가 필요하면 가져다 쓰는 **공용 라이브러리** 역할을
+한다 — attention이나 탐지기 출력과 비교하는 로직은 여기 없고, 그건 그 GT를 가져다 쓰는
+쪽(예: characterization의 03)이 각자 알아서 한다:
 
-- `ground_truth/gt_lib.py`의 `gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서
+- `ground_truth/coverage.py`의 `gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서
   (추정 아님) 196개 patch 각각에서 실제로 바뀐 픽셀 비율(0~1)을 계산. PatchFool은 정확히
   patch 1개만 1.0, 나머지는 0. LaVAN은 16px 그리드에 정렬 안 된 위치에 놓이므로 여러
   patch에 걸쳐 부분 비율로 나뉜다.
-- `experiments/characterization/00_extract_attention.py`가 대표 이미지 5장에 대해 원본
-  픽셀(`repr_images`)과 `gt_coverage`를 npz에 같이 저장 — 재실행 없이 언제든 "원본 vs
-  공격 이미지"를 다시 볼 수 있는 재료.
-- `ground_truth/visualize_gt.py`: 5장 x 2개 공격(PatchFool/LaVAN) 전부에 대해 GT
-  patch(노란 박스, 겹침 %)를 [clean | adv | diff 히트맵]에 그린 그림을 공격별 폴더
-  (`results/patchfool/`, `results/lavan/`)에, 요약표를 `results/gt_summary_n100.md`에
-  저장한다. attention/레이어 인자 없음 — 순전히 GT만 본다.
+- `ground_truth/draw_boxes.py`의 `plot_gt_locations(...)`: 그 GT를 박스로 원본/공격/diff
+  이미지 위에 그린다.
+- `ground_truth/visualize_gt.py`: 위 둘을 이용해 PatchFool/LaVAN 공격이 어떻게 생겼는지
+  예시 한 장씩만 보여준다(`results/patchfool.png`, `results/lavan.png`) — 체계적인 비교가
+  아니라 "공격이 대충 이렇게 생겼다"를 보여주는 용도.

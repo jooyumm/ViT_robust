@@ -1,9 +1,9 @@
 """Clean/PatchFool/LaVAN의 레이어x헤드x전체토큰 raw attention을 뽑아 npz 하나로 저장.
-GPU 필요한 유일한 단계 — 01/03/05가 이 npz만 읽는다.
+GPU 필요한 유일한 단계 — 01/02가 이 npz만 읽는다(03은 자체적으로 공격을 재생성함).
 
 저장 필드: top1/entropy/gini, row/column(헤드평균/헤드별) 12개 배열, argmax_row/col_avg
 (위치), row_full_avg/full_avg(대표 이미지의 CLS row/전체 197x197 행렬), repr_images(원본
-픽셀), gt_coverage(공격이 실제로 건드린 patch, ground_truth/gt_lib.py 참고).
+픽셀), gt_coverage(공격이 실제로 건드린 patch, ground_truth/coverage.py 참고).
 
 대표 이미지는 --repr_start부터 n_repr장(기본 0부터 5장) — 다른 예시를 보려면 이 값을
 바꿔서 재실행(같은 --chunk 안이어야 함).
@@ -20,7 +20,7 @@ SHARED_SRC_ROOT = os.path.dirname(DETECT_ROOT)  # ViT_robust -- shared src/ (mod
 sys.path.insert(0, SHARED_SRC_ROOT)
 sys.path.insert(0, DETECT_ROOT)
 sys.path.insert(0, HERE)   # for `import attention_lib`
-sys.path.insert(0, os.path.join(DETECT_ROOT, 'ground_truth'))   # for `import gt_lib`
+sys.path.insert(0, os.path.join(DETECT_ROOT, 'ground_truth'))   # for `import coverage`
 
 import numpy as np
 import torch
@@ -31,7 +31,7 @@ from attention_lib import (
     collect_full_layer_attn, row_distribution, col_distribution, full_row,
     top1_mass, normalized_entropy, gini_coefficient,
 )
-from gt_lib import gt_coverage
+from coverage import gt_coverage
 from attack_gen import chunked_patch_fool, chunked_lavan
 
 GROUPS = ('clean', 'patchfool', 'lavan')
@@ -93,8 +93,8 @@ def process_group(model, images, chunk, n_layers=12, n_repr=2, repr_start=0):
             chunk_col_avg_layers.append(col_avg)
             chunk_row_ph_layers.append(row_ph)
             chunk_col_ph_layers.append(col_ph)
-            chunk_row_full_avg_layers.append(full_row(attn_L_avg))   # (b, 197) -- CLS 포함, 03_token_bars.py용
-            chunk_full_avg_layers.append(attn_L_avg)                 # (b, 197, 197) -- 04_column_check.py용
+            chunk_row_full_avg_layers.append(full_row(attn_L_avg))   # (b, 197) -- CLS 포함, 02_token_bars.py용
+            chunk_full_avg_layers.append(attn_L_avg)                 # (b, 197, 197) -- 전체 행렬, 예비용
 
         for k in keys_avg:
             acc_avg[k].append(torch.stack(chunk_avg[k], dim=1).numpy())          # (b, n_layers)
@@ -186,7 +186,7 @@ def main():
 
         if name != 'clean':
             # 공격이 실제로 어느 patch를 얼마나 건드렸는지 clean과 diff해서 GT를 만든다
-            # (추측/눈대중 아님 -- gt_lib.gt_coverage 참고)
+            # (추측/눈대중 아님 -- coverage.gt_coverage 참고)
             gt = np.stack([
                 gt_coverage(images[i].detach().cpu(), images_by_group[name][i].detach().cpu())
                 for i in range(args.repr_start, repr_end)

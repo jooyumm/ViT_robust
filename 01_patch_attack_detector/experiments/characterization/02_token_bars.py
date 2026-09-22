@@ -31,7 +31,7 @@ def main():
             "이 npz는 row_full_avg_repr 필드가 없는 구버전입니다 — "
             "00_extract_attention.py를 다시 실행해서 npz를 새로 만드세요.")
 
-    p = os.path.join(out_dir, f'03_token_bars_L{args.layer}_img{args.img_idx}.png')
+    p = os.path.join(out_dir, f'02_token_bars_L{args.layer}_img{args.img_idx}.png')
     plot_token_attention_line(repr_by_group, args.img_idx, args.layer, p)
     print(f"Saved: {p}")
 

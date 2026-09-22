@@ -1,7 +1,7 @@
 """
-ground_truth/gt_plot.py — GT(gt_lib.gt_coverage, 픽셀 diff로 계산한 "공격이 실제로
-건드린 patch")를 원본/공격 이미지 위에 그려서 보여주는 그림 함수. attention이나 탐지기
-출력은 여기서 다루지 않는다 — 이 폴더의 역할은 정답 위치를 보여주는 것뿐이다.
+ground_truth/draw_boxes.py — GT(coverage.gt_coverage, 픽셀 diff로 계산한 "공격이 실제로
+건드린 patch")를 원본/공격 이미지 위에 박스로 그려서 보여주는 그림 함수. attention이나
+탐지기 출력은 여기서 다루지 않는다 — 이 폴더의 역할은 정답 위치를 보여주는 것뿐이다.
 """
 import numpy as np
 import matplotlib
@@ -9,7 +9,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-from gt_lib import gt_patch_summary, PATCH_SIZE, PPL
+from coverage import gt_patch_summary, PATCH_SIZE, PPL
 
 GROUP_LABELS = {'clean': 'Clean', 'patchfool': 'PatchFool', 'lavan': 'LaVAN'}
 # clean 패널은 파랑, 공격(patchfool/lavan) 패널은 전부 노랑 — clean도 박스를 지우지
@@ -63,7 +63,7 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
     노랑으로 색만 달리해서 clean인지 공격인지 구분한다(clean도 박스를 지우지 않아야 adv
     패널과 같은 위치인지 바로 비교된다). PatchFool은 항상 patch 정확히 1개뿐이라 bbox와
     개별 patch 박스가 어차피 같은 모양이 되고, 라벨도 필요 없어 안 붙인다(title에 patch
-    번호는 그대로 나온다). GT는 순전히 gt_lib.gt_coverage(픽셀 diff)로 계산한 것이고,
+    번호는 그대로 나온다). GT는 순전히 coverage.gt_coverage(픽셀 diff)로 계산한 것이고,
     attention이나 탐지기 결과는 이 그림에 전혀 들어가지 않는다.
     repr_by_group[group]['images'/'gt_coverage']가 없으면(구버전 npz) 조용히 건너뛴다."""
     if 'images' not in repr_by_group.get('clean', {}) or \

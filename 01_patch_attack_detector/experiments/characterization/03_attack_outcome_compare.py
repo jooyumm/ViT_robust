@@ -3,6 +3,7 @@
 다시 만들고(attack_gen.py 공유), 뽑힌 두 장에 대해서만 attention/GT를 계산한다.
 """
 import argparse
+import json
 import os
 import sys
 
@@ -26,7 +27,7 @@ from src.models import get_device, load_vit_model
 from src.dataset import get_dataloader
 from attention_lib import collect_full_layer_attn, full_row
 from attack_gen import chunked_patch_fool
-from gt_lib import gt_coverage, gt_patch_summary
+from coverage import gt_coverage, gt_patch_summary
 
 
 def predict(model, images, chunk=20):
@@ -118,10 +119,25 @@ def main():
 
     fig.suptitle(f'Layer {args.layer} — attack success vs failure, attention comparison')
     plt.tight_layout()
-    p = os.path.join(out_dir, f'05_outcome_compare_L{args.layer}.png')
+    p = os.path.join(out_dir, f'03_outcome_compare_L{args.layer}.png')
     plt.savefig(p, dpi=150)
     plt.close(fig)
     print(f"Saved: {p}")
+
+    # 어떤 이미지를 골랐는지는 seed/파라미터가 바뀌면 달라질 수 있어서, 실행할 때마다
+    # 여기 다시 저장한다(덮어씀) -- 로그를 뒤지지 않아도 항상 최신 선택이 파일로 남는다.
+    selection = {
+        'seed': args.seed, 'num_samples': args.num_samples, 'layer': args.layer,
+        'clean_accuracy': clean_correct.float().mean().item(),
+        'success': {'image': i_success, 'true': int(labels_cpu[i_success]),
+                    'clean_pred': int(clean_pred[i_success]), 'adv_pred': int(adv_pred[i_success])},
+        'failure': {'image': i_fail, 'true': int(labels_cpu[i_fail]),
+                    'clean_pred': int(clean_pred[i_fail]), 'adv_pred': int(adv_pred[i_fail])},
+    }
+    sel_path = os.path.join(out_dir, '03_outcome_compare_selection.json')
+    with open(sel_path, 'w') as f:
+        json.dump(selection, f, indent=2)
+    print(f"Saved: {sel_path}")
 
 
 if __name__ == '__main__':
