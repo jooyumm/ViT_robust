@@ -59,13 +59,12 @@ ViT_robust/
     characterization/            레이어x헤드x전체토큰 raw attention 특성 관찰(탐지기 설계
                                   아님) — "테스트하고 싶은 것"별로 파일을 나눴다:
       attention_lib.py             저수준: 헤드별 attention hook + 분포/집중도 계산 함수
-      gt_lib.py                    저수준: 공격이 실제로 건드린 patch를 clean/adv 픽셀
-                                    diff로 계산하는 ground truth 함수(attention 추정 아님)
       00_extract_attention.py         GPU 필요한 유일한 단계. clean/PatchFool/LaVAN 생성 +
-                                    attention 추출 + 지표 계산 + GT(대표 이미지 원본/공격
-                                    이미지 픽셀, gt_coverage) -> npz 하나로 저장
-      data_io.py                   그 npz를 다시 불러오는 로더 (아래 두 스크립트가 공유)
-      plotting.py                  두 스크립트가 공유하는 그림 함수
+                                    attention 추출 + 지표 계산 + GT(대표 이미지 5장 원본/공격
+                                    픽셀, gt_coverage — ground_truth/gt_lib.py 사용) -> npz
+                                    하나로 저장
+      data_io.py                   그 npz를 다시 불러오는 로더 (01~04, ground_truth/가 공유)
+      plotting.py                  01~04가 공유하는 그림 함수
       01_concentration.py        "얼마나 몰리는가" — 히스토그램/헤드별 편차/레이어별 비교
                                     (npz만 읽음, GPU 불필요)
       02_sink_position.py        "어디로 몰리는가, 고정 위치인가, 공격이 위치를 바꾸는가"
@@ -79,16 +78,27 @@ ViT_robust/
                                     스파이크(예: L12/img0의 patch 17)가 진짜 sink라면
                                     197개 쿼리 전부가 거길 봐야 한다는 가설을 검증. 03과
                                     반대 방향(고정 키, 가변 쿼리) (npz만 읽음, GPU 불필요)
-      05_gt_check.py              "attention이 정말 공격당한 자리로 몰리는가" — 04까지는
-                                    맞는지 한 장씩 손으로 diff해서 확인했는데, 이제 그걸
-                                    자동화: GT(gt_lib.py, 픽셀 diff)와 관측된 attention
-                                    argmax를 대표 이미지 전부(기본 5장)에 대해 자동 대조,
-                                    이미지별 원본/공격/diff + GT-vs-관측 오버레이 그림도
-                                    저장 (npz만 읽음, GPU 불필요)
+
+  ground_truth/                  "공격이 실제로 어디를 건드렸는가"(픽셀 diff)를 관측된
+                                  attention/탐지 결과와 자동 대조하는 시스템. characterization
+                                  전용이 아니라 이 프로젝트 최상위에 둬서 앞으로 detector/
+                                  자체를 테스트할 때도 그대로 재사용한다.
+    gt_lib.py                      저수준: clean/adv 픽셀 diff로 "어느 patch를 얼마나
+                                    건드렸는지"(196차원 coverage)를 계산하는 ground truth 함수
+    gt_overlay_plot.py              GT(노란 박스) vs 관측된 attention argmax(하늘색 박스)를
+                                    원본/공격/diff 이미지 위에 겹쳐 그리는 그림 함수
+    check_attention_vs_gt.py       실행 스크립트. characterization의 00_extract_attention.py가
+                                    저장한 npz(gt_coverage/repr_images)를 읽어 대표 이미지
+                                    전부에 대해 GT-vs-attention 일치율을 표+그림으로 저장
+                                    (npz만 읽음, GPU 불필요)
+    results/
+      gt_check_L12_n100.md          일치율 표
+      patchfool/img{0..4}_L12.png   공격별로 나눈 GT-vs-attention 오버레이 그림
+      lavan/img{0..4}_L12.png
 
   results/
     layer_sweep/                위 실험의 결과물 (npz/png/md)
-    characterization/           위 실험들의 결과물 (npz/png/md)
+    characterization/           위 실험들의 결과물 (npz/png/md, GT 관련 제외 — ground_truth/results/ 참고)
 ```
 
 ## 이력
@@ -301,27 +311,31 @@ attention을 특정 patch로 강하게 끌어당긴다)이 맞다면, CLS뿐 아
 존재하는 현상이고, PatchFool은 그 자연 sink를 4.7배(0.11→0.51)까지 증폭시켜 거의 모든
 토큰을 하나로 결집시킨다고 해석할 수 있다.)
 
-## GT 검증 시스템 (`gt_lib.py`, `05_gt_check.py`) — "정말 그런지" 눈대중이 아니라 자동 대조
+## GT 검증 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 자동 대조
 
 위 patch 17 결과까지는 image 0 한 장을 놓고 clean/adv를 직접 diff하는 일회성 스크립트로
 확인했다. 이걸 매번 손으로 하지 않도록, **공격이 실제로 어느 patch를 얼마나 건드렸는지를
-pixel diff로 계산한 ground truth**를 파이프라인에 내장했다:
+pixel diff로 계산한 ground truth**를 파이프라인에 내장했다. 이 시스템은 characterization
+전용이 아니라 `01_patch_attack_detector/ground_truth/`라는 프로젝트 최상위 폴더로
+뺐다 — 탐지기(`detector/`) 자체를 테스트할 때도 "탐지가 가리키는 위치 vs 실제 공격
+위치"를 그대로 재사용할 수 있어서다:
 
-- `gt_lib.gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서(추정 아님) 196개 patch
-  각각에서 실제로 바뀐 픽셀 비율(0~1)을 계산. PatchFool은 정확히 patch 1개만 1.0, 나머지는
-  0. LaVAN은 16px 그리드에 정렬 안 된 위치에 놓이므로 여러 patch에 걸쳐 부분 비율로 나뉜다.
-- `00_extract_attention.py`가 대표 이미지 **5장**(기존 2장에서 늘림)에 대해 원본 픽셀
-  (`repr_images`)과 `gt_coverage`를 npz에 같이 저장 — 재실행 없이 언제든 "원본 vs 공격
-  이미지"를 다시 볼 수 있는 재료.
-- `05_gt_check.py`: 이 GT와 그 레이어의 관측된 attention argmax(`argmax_col_avg`)를 대표
-  이미지 5장 x 2개 공격(PatchFool/LaVAN) 전체에 대해 자동 대조하고, 이미지마다 [clean |
-  adv | diff 히트맵]에 GT patch(노란 박스)와 관측 argmax(하늘색 박스)를 겹쳐 그린
-  `05_gt_overlay_{group}_img{i}_L{layer}.png` 10장 + 대조표
-  `05_gt_check_L12_n100.md`를 저장.
+- `ground_truth/gt_lib.py`의 `gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서
+  (추정 아님) 196개 patch 각각에서 실제로 바뀐 픽셀 비율(0~1)을 계산. PatchFool은 정확히
+  patch 1개만 1.0, 나머지는 0. LaVAN은 16px 그리드에 정렬 안 된 위치에 놓이므로 여러
+  patch에 걸쳐 부분 비율로 나뉜다.
+- `experiments/characterization/00_extract_attention.py`가 대표 이미지 **5장**(기존
+  2장에서 늘림)에 대해 원본 픽셀(`repr_images`)과 `gt_coverage`를 npz에 같이 저장 —
+  재실행 없이 언제든 "원본 vs 공격 이미지"를 다시 볼 수 있는 재료.
+- `ground_truth/check_attention_vs_gt.py`: 이 GT와 그 레이어의 관측된 attention
+  argmax(`argmax_col_avg`)를 대표 이미지 5장 x 2개 공격(PatchFool/LaVAN) 전체에 대해
+  자동 대조하고, 이미지마다 [clean | adv | diff 히트맵]에 GT patch(노란 박스)와 관측
+  argmax(하늘색 박스)를 겹쳐 그린 그림을 공격별 폴더(`results/patchfool/`,
+  `results/lavan/`)에 저장 + 대조표 `results/gt_check_L12_n100.md`를 저장.
 
-**결과 (L=12)**: PatchFool 5장 중 4장 일치([`05_gt_overlay_patchfool_img0_L12.png`](results/characterization/05_gt_overlay_patchfool_img0_L12.png)처럼 GT와 관측이 정확히 같은 patch), 나머지 1장은
-[`05_gt_overlay_patchfool_img1_L12.png`](results/characterization/05_gt_overlay_patchfool_img1_L12.png)에서 보듯 GT(25)와 관측(23)이 같은 행에서 2칸 차이 나는 "근접
-미스"였다. **LaVAN은 5장 중 1장만 일치** — [`05_gt_overlay_lavan_img2_L12.png`](results/characterization/05_gt_overlay_lavan_img2_L12.png)를 보면 LaVAN이
+**결과 (L=12)**: PatchFool 5장 중 4장 일치([`ground_truth/results/patchfool/img0_L12.png`](ground_truth/results/patchfool/img0_L12.png)처럼 GT와 관측이 정확히 같은 patch), 나머지 1장은
+[`ground_truth/results/patchfool/img1_L12.png`](ground_truth/results/patchfool/img1_L12.png)에서 보듯 GT(25)와 관측(23)이 같은 행에서 2칸 차이 나는 "근접
+미스"였다. **LaVAN은 5장 중 1장만 일치** — [`ground_truth/results/lavan/img2_L12.png`](ground_truth/results/lavan/img2_L12.png)를 보면 LaVAN이
 건드린 3x3 블록(노란 박스, 물속 배경이라 정보량이 적은 영역)과 실제 attention이 몰리는
 곳(하늘색 박스)이 완전히 다른 위치다.
 

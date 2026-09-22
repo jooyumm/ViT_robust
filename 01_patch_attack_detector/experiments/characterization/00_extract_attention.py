@@ -28,7 +28,9 @@ detector/topk_mass_v1.py의 CLS-row·헤드평균 전용 함수는 쓰지 않는
     lavan 각각) — "원본 vs 공격 당한 이미지"를 눈으로/코드로 직접 볼 수 있는 GT 재료
   - gt_coverage(patchfool/lavan만): 대표 이미지 n_repr장분, (n_repr, 196) — 공격이 실제로
     "어느 patch를 얼마나 건드렸는지"를 clean/adv 픽셀을 diff해서 계산한 ground truth(추측
-    아님, gt_lib.py 참고). 05_gt_check.py가 이걸 관측된 attention argmax와 직접 비교한다.
+    아님, `../../ground_truth/gt_lib.py` 참고 — 탐지기 테스트 등에서도 재사용하려고
+    characterization 밖의 프로젝트 top-level로 뺐다). `../../ground_truth/
+    check_attention_vs_gt.py`가 이걸 관측된 attention argmax와 직접 비교한다.
 
 사용법:
   python 00_extract_attention.py --num_samples 100 --seed 42 --chunk 20
@@ -45,6 +47,7 @@ SHARED_SRC_ROOT = os.path.dirname(DETECT_ROOT)  # ViT_robust -- shared src/ (mod
 sys.path.insert(0, SHARED_SRC_ROOT)
 sys.path.insert(0, DETECT_ROOT)
 sys.path.insert(0, HERE)   # for `import attention_lib`
+sys.path.insert(0, os.path.join(DETECT_ROOT, 'ground_truth'))   # for `import gt_lib`
 
 import numpy as np
 import torch
