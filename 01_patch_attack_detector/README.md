@@ -397,6 +397,23 @@ attention argmax와 비교하면 4/5(image 0,1,2,3)는 PatchFool이 공격한 pa
 patch_select='Attn'(PatchFool, attn_layer_idx=4 기준 선택)과 랜덤 위치(LaVAN)의 차이가
 "공격이 attention을 실제로 지배하는가"를 가르는 핵심 변수라는 뜻.
 
+**실패 사례(image 4)를 직접 확인**: 위 표만 보면 "공격한 자리(80)가 안 튀고 원래
+sink(170)가 여전하다"는 말인데, 이게 진짜인지 03/04와 같은 방식으로 직접 그려서
+확인했다 — [`results/characterization/03_token_bars_L12_img4.png`](results/characterization/03_token_bars_L12_img4.png)를 보면 **patch 80(token 81) 자리는 세
+그룹 다 0에 가깝고**(공격이 있든 없든 아무도 안 봄), 진짜로 튀는 곳은 token 171
+(patch 170)인데 거기서조차 clean(0.201)이 PatchFool(0.189)보다 오히려 살짝 높다 —
+공격이 사실상 아무 효과가 없었다는 뜻. `04_column_check.py`로 두 지점을 각각 확인하면
+더 뚜렷하다: patch 80을 누가 보는지
+([`04_column_check_L12_img4_tok81.png`](results/characterization/04_column_check_L12_img4_tok81.png))
+PatchFool이 clean/LaVAN보다 살짝 높긴 하지만(약 2~4배) 절대값 자체가 0.3 문턱값의
+1/10도 안 돼서 "sink"라 부를 수준이 전혀 아니고, patch 170을 누가 보는지
+([`04_column_check_L12_img4_tok171.png`](results/characterization/04_column_check_L12_img4_tok171.png))
+은 clean과 PatchFool 곡선이 거의 포개져서 공격이 이 자리에 손도 못 댔음을 보여준다.
+즉 image 4는 "공격이 흔적은 남겼지만(patch 80이 clean보다 조금은 더 주목받음)
+지배적 sink를 만드는 데는 완전히 실패한" 사례 — PatchFool의 성공이 자동이 아니라
+"공격 전에 미래의 sink 위치를 얼마나 잘 맞히는가"에 달려 있다는 걸 가장 직접적으로
+보여준다.
+
 **범위 제한**: 탐지 임계값/AUROC/flag 판정 없음(위 4번 항목의 "5×균등분포"도 설명용).
 레이어 결합·Dual-Gate 설계는 이 결과를 보고 다음 단계에서 논의한다.
 

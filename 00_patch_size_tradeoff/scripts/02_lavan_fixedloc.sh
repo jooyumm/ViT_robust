@@ -7,6 +7,7 @@
 #SBATCH --partition=suma_rtx4090
 #SBATCH --qos=base_qos
 #SBATCH --gres=gpu:1
+#SBATCH --exclude=cs-gpu-01
 #SBATCH --time=05:00:00
 #SBATCH --output=results/job_logs/nohup_02_lavan_fixedloc_%j.txt
 
