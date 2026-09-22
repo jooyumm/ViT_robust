@@ -40,11 +40,41 @@ def _make_attn_hook(weights_list):
 
 
 def _collect_attn(model):
-    """hook 등록 → forward → hook 해제 → attn_weights 반환."""
+    """hook 등록 → forward → hook 해제 → attn_weights 반환.
+    no_grad+detach라서 patch 선택(1회, gradient 불필요)에만 쓴다 — attack_mode='Attention'
+    루프 안에서는 절대 쓰면 안 됨(_collect_attn_grad 참고)."""
     weights = []
     hooks   = []
     for blk in model.blocks:
         hooks.append(blk.attn.register_forward_hook(_make_attn_hook(weights)))
+    return weights, hooks
+
+
+def _make_attn_hook_grad(weights_list):
+    """_make_attn_hook의 미분 가능 버전 — no_grad/detach 없이 그대로 그래프에 남겨서
+    delta까지 backward가 이어지게 한다. attack_mode='Attention'이 매 iteration마다
+    attention 손실의 gradient를 delta에 대해 직접 구해야 하므로(PatchFool 원 논문 코드는
+    모델 forward가 attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모델을 그대로
+    쓰다 보니 hook으로 가로채야 해서 미분 가능한 버전을 따로 둔다) 이 함수가 필요하다."""
+    def hook(module, input, output):
+        x = input[0]                          # (B, N, C)
+        B, N, C = x.shape
+        qkv = module.qkv(x)                   # (B, N, 3*C)
+        qkv = qkv.reshape(B, N, 3, module.num_heads,
+                           C // module.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, _ = qkv.unbind(0)               # (B, heads, N, head_dim)
+        attn = (q @ k.transpose(-2, -1)) * module.scale
+        attn = attn.softmax(dim=-1)            # (B, heads, N, N) -- 그래프 유지, GPU에 둠
+        weights_list.append(attn)
+    return hook
+
+
+def _collect_attn_grad(model):
+    """_collect_attn의 미분 가능 버전. attack_mode='Attention' 루프 안에서만 쓴다."""
+    weights = []
+    hooks   = []
+    for blk in model.blocks:
+        hooks.append(blk.attn.register_forward_hook(_make_attn_hook_grad(weights)))
     return weights, hooks
 
 
@@ -180,8 +210,10 @@ def patch_fool_attack(
         perturbed = original_images + torch.mul(delta, mask)
 
         if attack_mode == 'Attention':
-            # attention 수집하면서 forward
-            attn_iter, hooks_iter = _collect_attn(model)
+            # attention 수집하면서 forward -- 미분 가능한 버전 필수(_collect_attn_grad).
+            # _collect_attn(선택용)은 no_grad+detach라 여기 쓰면 a_loss가 delta까지
+            # 이어지는 그래프 없이 만들어져서 torch.autograd.grad가 에러난다.
+            attn_iter, hooks_iter = _collect_attn_grad(model)
             out = model(perturbed)
             for h in hooks_iter:
                 h.remove()
