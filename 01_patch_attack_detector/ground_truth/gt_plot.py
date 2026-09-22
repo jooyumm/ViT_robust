@@ -12,11 +12,11 @@ from matplotlib.patches import Rectangle
 from gt_lib import gt_patch_summary, PATCH_SIZE, PPL
 
 GROUP_LABELS = {'clean': 'Clean', 'patchfool': 'PatchFool', 'lavan': 'LaVAN'}
-# 박스 색을 clean/patchfool/lavan마다 다르게 둔다 — clean 패널도 박스를 지우지 않고(안
-# 지워야 같은 위치를 adv 패널과 바로 비교할 수 있다) 색만 다르게 해서 어느 그룹인지
-# 한눈에 구분되게 한다. diff 패널은 'hot' 컬러맵(검정->빨강->주황->노랑->흰색)을 쓰므로
-# 그 범위에 없는 색(파랑/라임/마젠타)을 골라 배경과 겹쳐도 항상 잘 보이게 했다.
-BOX_COLORS = {'clean': 'dodgerblue', 'patchfool': 'lime', 'lavan': 'magenta'}
+# clean 패널은 파랑, 공격(patchfool/lavan) 패널은 전부 노랑 — clean도 박스를 지우지
+# 않는다(지우면 adv 패널과 같은 위치인지 비교하기 어려워진다), 색만 달라서 clean인지
+# 공격인지 한눈에 구분된다.
+CLEAN_BOX_COLOR = 'blue'
+ATTACK_BOX_COLOR = 'yellow'
 
 
 def _unnormalize(img):
@@ -43,12 +43,14 @@ def _draw_patch_box(ax, patch_idx, color, label=None, ppl=PPL, patch_size=PATCH_
 def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01):
     """공격이 실제로 건드린 patch(들)을 [clean | adv | diff 히트맵] 세 장에 박스로 표시한다
     (clean 패널도 박스를 지우지 않는다 — 지우면 adv 패널과 같은 위치인지 비교하기 어려워
-    지므로, 대신 clean은 BOX_COLORS['clean']으로 색을 다르게 줘서 구분한다). 겹침 비율(%)
-    라벨은 LaVAN처럼 patch가 여러 개·부분적으로 겹칠 때만 의미가 있어서 그때만 붙인다 —
-    PatchFool은 항상 patch 정확히 1개가 100%라 라벨 없이 박스만 그린다(title에 patch
-    번호는 그대로 나온다). GT는 순전히 gt_lib.gt_coverage(픽셀 diff)로 계산한 것이고,
-    attention이나 탐지기 결과는 이 그림에 전혀 들어가지 않는다.
-    repr_by_group[group]['images'/'gt_coverage']가 없으면(구버전 npz) 조용히 건너뛴다."""
+    지므로, 대신 clean은 파랑/공격은 노랑으로 색만 달리해서 구분한다). 겹침 비율(%) 라벨은
+    LaVAN처럼 patch가 여러 개·부분적으로 겹칠 때만 의미가 있고, 그중에서도 diff 패널
+    (실제로 무엇이 얼마나 바뀌었는지 보는 곳)에만 적는다 — clean/adv 패널은 GT 위치만
+    보면 되지 겹침 비율 숫자까지 필요하지 않다. PatchFool은 항상 patch 정확히 1개가
+    100%라 어느 패널에도 라벨을 안 붙인다(title에 patch 번호는 그대로 나온다). GT는
+    순전히 gt_lib.gt_coverage(픽셀 diff)로 계산한 것이고, attention이나 탐지기 결과는
+    이 그림에 전혀 들어가지 않는다. repr_by_group[group]['images'/'gt_coverage']가
+    없으면(구버전 npz) 조용히 건너뛴다."""
     if 'images' not in repr_by_group.get('clean', {}) or \
        'images' not in repr_by_group.get(group, {}) or \
        'gt_coverage' not in repr_by_group.get(group, {}):
@@ -63,15 +65,15 @@ def plot_gt_locations(repr_by_group, img_idx, group, out_path, gt_min_frac=0.01)
     diff = np.abs(_unnormalize(adv_img) - _unnormalize(clean_img)).sum(axis=-1)
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
-    for ax, img, title, box_color in [
-            (axes[0], _unnormalize(clean_img), 'Clean', BOX_COLORS['clean']),
-            (axes[1], _unnormalize(adv_img), f'{GROUP_LABELS[group]}', BOX_COLORS[group]),
-            (axes[2], diff, 'diff (bright = pixels changed)', BOX_COLORS[group])]:
+    panels = [(axes[0], _unnormalize(clean_img), 'Clean', CLEAN_BOX_COLOR, False),
+              (axes[1], _unnormalize(adv_img), f'{GROUP_LABELS[group]}', ATTACK_BOX_COLOR, False),
+              (axes[2], diff, 'diff (bright = pixels changed)', ATTACK_BOX_COLOR, show_pct)]
+    for ax, img, title, box_color, label_here in panels:
         cmap = None if img.ndim == 3 else 'hot'
         ax.imshow(img, cmap=cmap)
         _draw_patch_grid(ax)
         for p, frac in gt_patches:
-            label = f'{frac:.0%}' if show_pct else None
+            label = f'{frac:.0%}' if label_here else None
             _draw_patch_box(ax, p, box_color, label=label)
         ax.set_xticks([]); ax.set_yticks([])
         ax.set_title(title, fontsize=10)
