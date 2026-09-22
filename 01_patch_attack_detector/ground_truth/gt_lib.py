@@ -34,8 +34,9 @@ def gt_coverage(clean_img, adv_img, patch_size=PATCH_SIZE, ppl=PPL, threshold=1e
 
 def gt_patch_summary(coverage, min_frac=0.01):
     """coverage: (196,) ndarray (gt_coverage 출력). min_frac 이상 겹친 patch만 골라
-    [(patch_idx, coverage_frac), ...]를 겹침 비율 내림차순으로 반환. 공격이 없으면(coverage
-    전부 0) 빈 리스트."""
+    [(patch_idx, coverage_frac), ...]를 **patch 번호 오름차순**으로 반환(겹침 비율 순이
+    아님 — 어느 자리들인지 공간적으로 훑어보기 쉽도록). 공격이 없으면(coverage 전부 0)
+    빈 리스트."""
     idxs = [i for i in range(len(coverage)) if coverage[i] >= min_frac]
-    idxs.sort(key=lambda i: -coverage[i])
+    idxs.sort()
     return [(i, float(coverage[i])) for i in idxs]

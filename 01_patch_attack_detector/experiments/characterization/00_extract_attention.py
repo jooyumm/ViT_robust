@@ -73,9 +73,16 @@ def chunked_patch_fool(model16, images, labels, device, attn_layer_idx, chunk):
     adv_chunks = []
     for s in range(0, images.shape[0], chunk):
         e = min(s + chunk, images.shape[0])
+        # attack_mode='Attention' (patch_fool_attack의 실제 기본값) -- CE loss뿐 아니라
+        # attention 손실(PCGrad로 CE와 결합)까지 같이 최적화하는 PatchFool 논문의 원래
+        # 공격 방식. 예전엔 여기서 'CE_loss'로 덮어써서 attention 손실 없이 순수 분류
+        # 손실만 쓰고 있었다 -- 지금까지 관찰한 attention 왜곡이 patch_select='Attn'
+        # (공격 위치를 attention 기준으로 고르는 것)만으로 생긴 건지, attack_mode='Attention'
+        # (최적화 자체가 attention을 직접 왜곡하는 것)까지 필요한 건지 구분하려고 기본값으로
+        # 되돌렸다.
         adv_chunk, _ = patch_fool_attack(
             model16, images[s:e], labels[s:e], device, patch_size_model=16,
-            attack_mode='CE_loss', train_attack_iters=250, num_patch=1, patch_select='Attn',
+            attack_mode='Attention', train_attack_iters=250, num_patch=1, patch_select='Attn',
             attn_layer_idx=attn_layer_idx)
         adv_chunks.append(adv_chunk)
         if device.type == 'cuda':

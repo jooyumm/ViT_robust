@@ -10,7 +10,7 @@
 #SBATCH --time=05:00:00
 #SBATCH --output=results/job_logs/nohup_02_lavan_fixedloc_%j.txt
 
-source /home/jooyumm/ViT_robust/ViT_tradeoff/scripts/common.sh
+source /home/jooyumm/ViT_robust/00_patch_size_tradeoff/scripts/common.sh
 
 for P in 8 16; do
   BS=16; if [ "$P" != "8" ]; then BS=64; fi

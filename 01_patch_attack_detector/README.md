@@ -214,29 +214,47 @@ CLS-row·헤드평균 전용 함수는 건드리지 않고, 헤드별·전체 19
 필요 없다. 저수준 함수(`attention_lib.py`)와 npz 로더(`data_io.py`)/그림 함수
 (`plotting.py`)는 셋이 공유한다. 디렉토리 구조 위 참고.
 
-**방법**: 같은 기본 이미지 n=100장(seed=42)에서 clean/PatchFool(attn_layer_idx=4, 250
-iters)/LaVAN(patch_ratio=0.02, 40 steps) 세 그룹을 만들고, 그룹마다 forward 1회로 12개
-block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마다 (a) CLS→patch
-행(row, detector의 대상과 동일)과 (b) 전체 쿼리가 각 patch에 주는 attention의 합
-(column) 두 분포를 뽑고, 각각 헤드별로/헤드 평균 후로 top-1 mass·정규화 entropy·Gini를
-계산했다(`00_extract_attention.py`, job 2302721, RTX 4090).
+**방법**: 같은 기본 이미지 n=100장(seed=42)에서 clean/PatchFool(attn_layer_idx=4,
+attack_mode='Attention', 250 iters)/LaVAN(patch_ratio=0.02, 40 steps) 세 그룹을 만들고,
+그룹마다 forward 1회로 12개 block 전부의 헤드별 attention(B,12 heads,197,197)을 수집.
+레이어마다 (a) CLS→patch 행(row, detector의 대상과 동일)과 (b) 전체 쿼리가 각 patch에
+주는 attention의 합(column) 두 분포를 뽑고, 각각 헤드별로/헤드 평균 후로 top-1
+mass·정규화 entropy·Gini를 계산했다(`00_extract_attention.py`, RTX 4090).
+
+**attack_mode 정정**: 처음엔 `chunked_patch_fool`이 `attack_mode='CE_loss'`로 덮어써서
+`patch_fool_attack`의 실제 기본값(`'Attention'`: CE loss와 attention loss를 PCGrad로
+결합)을 안 쓰고 있었다. 기본값으로 되돌리려다 `src/attacks/patch_fool.py`의 진짜 버그를
+발견했다 — attention을 가로채는 forward hook(`_make_attn_hook`)이 `torch.no_grad()` +
+`.detach()`로 짜여 있어서, patch 선택(1회, gradient 불필요)에는 맞지만 공격 루프 안에서
+attention loss의 gradient를 `delta`까지 역전파하는 데는 못 쓴다 — 실제로 시도하면
+"element 0 of tensors does not require grad" 에러로 즉시 죽는다. 즉 `attack_mode=
+'Attention'`은 이 코드베이스에서 **한 번도 정상 동작한 적이 없었다**(그래서 지금까지
+모든 실험이 CE_loss만 썼던 것). 원본 논문 저장소([RICE-EIC/Patch-Fool](https://github.com/RICE-EIC/Patch-Fool))는
+모델 forward가 attention을 직접(미분 가능하게) 반환해서 이 문제가 없는데, 여기서는 timm
+모델을 그대로 쓰면서 hook으로 가로채다 보니 생긴 문제였다. `_make_attn_hook_grad`/
+`_collect_attn_grad`(no_grad/detach 없는 버전)를 추가해서 공격 루프 안에서만 쓰도록
+고쳤다 — 아래 결과는 전부 이 수정 이후, 진짜 `attack_mode='Attention'`으로 다시 뽑은
+것이다.
 
 **결과**: 레이어별 top-1 mass(CLS row, 헤드평균) 중앙값 —
 
 | L | clean | PatchFool | LaVAN | PF−clean | LaVAN−clean |
 |---|---|---|---|---|---|
-| 1 | 0.0136 | 0.0138 | 0.0136 | +0.0002 | +0.0000 |
-| 2 | 0.0156 | 0.0186 | 0.0156 | +0.0030 | +0.0000 |
-| 3 | 0.0151 | 0.0194 | 0.0149 | +0.0044 | −0.0001 |
-| 4 | 0.0142 | 0.0203 | 0.0149 | +0.0061 | +0.0007 |
-| 5 | 0.0208 | 0.0249 | 0.0210 | +0.0041 | +0.0002 |
-| 6 | 0.0495 | 0.0467 | 0.0489 | −0.0028 | −0.0006 |
-| 7 | 0.1154 | 0.1097 | 0.1179 | −0.0057 | +0.0025 |
-| 8 | 0.1743 | 0.1630 | 0.1784 | −0.0113 | +0.0040 |
-| 9 | 0.2176 | 0.1966 | 0.2105 | −0.0210 | −0.0072 |
-| 10 | 0.1851 | 0.1778 | 0.1719 | −0.0073 | −0.0131 |
-| 11 | 0.1202 | 0.2358 | 0.1060 | **+0.1156** | −0.0142 |
-| 12 | 0.1536 | 0.4157 | 0.1273 | **+0.2621** | −0.0263 |
+| 1 | 0.0136 | 0.0137 | 0.0136 | +0.0001 | +0.0000 |
+| 2 | 0.0156 | 0.0187 | 0.0156 | +0.0031 | +0.0000 |
+| 3 | 0.0151 | 0.0209 | 0.0149 | +0.0059 | −0.0001 |
+| 4 | 0.0142 | 0.0224 | 0.0149 | +0.0082 | +0.0007 |
+| 5 | 0.0208 | 0.0291 | 0.0210 | +0.0083 | +0.0002 |
+| 6 | 0.0495 | 0.0471 | 0.0489 | −0.0025 | −0.0006 |
+| 7 | 0.1154 | 0.1093 | 0.1179 | −0.0061 | +0.0025 |
+| 8 | 0.1743 | 0.1632 | 0.1784 | −0.0111 | +0.0040 |
+| 9 | 0.2176 | 0.1951 | 0.2105 | −0.0225 | −0.0072 |
+| 10 | 0.1851 | 0.1848 | 0.1719 | −0.0003 | −0.0131 |
+| 11 | 0.1202 | 0.2899 | 0.1060 | **+0.1697** | −0.0142 |
+| 12 | 0.1536 | 0.4365 | 0.1273 | **+0.2829** | −0.0263 |
+
+(CE_loss였을 때보다 L=11~12에서 편차가 더 커졌다 — attention loss를 실제로 쓰니 신호가
+더 뚜렷해졌다는 뜻으로 자연스럽다.)
 
 전체 표(5×균등분포 초과 비율 포함, 설명용 기준선이지 탐지 임계값 아님)는
 [`results/characterization/01_concentration_summary_n100.md`](results/characterization/01_concentration_summary_n100.md)
@@ -271,45 +289,45 @@ block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마�
 **정성적 히트맵**: [`results/characterization/02_attention_heatmap_grid_img0.png`](results/characterization/02_attention_heatmap_grid_img0.png),
 [`img1`](results/characterization/02_attention_heatmap_grid_img1.png) — 같은 원본
 사진 기준 clean/PatchFool/LaVAN 3×12(레이어) 그리드. image 1에서는 clean/LaVAN이 같은
-위치(우하단 모서리)에 이미 "sink"처럼 보이는 밝은 패치를 갖고 있고, PatchFool은 그 자리를 훨씬
+위치(우상단 모서리)에 이미 "sink"처럼 보이는 밝은 패치를 갖고 있고, PatchFool은 그 자리를 훨씬
 더 밝게 만드는 것처럼 보였다(표본 2장뿐인 관찰) — 아래 "Sink 위치 일관성" 절에서 n=100
 전체로 이 관찰을 정량화한 결과, **완전히 맞지는 않았다**(레이어에 따라 다름, 자세한 내용은
 해당 절 참고).
 [`results/characterization/02_sorted_mass_by_layer_img0.png`](results/characterization/02_sorted_mass_by_layer_img0.png)
 는 "슬라이드 막대그래프"(정상=분산, 공격=소수 토큰 집중)를 레이어별 정렬-질량 곡선으로
-재현한 것 — image 0에서는 L=10~12에서만 PatchFool의 "왼쪽으로 치우친 급경사" 모양이
+재현한 것 — image 0에서는 L=11~12에서만 PatchFool의 "왼쪽으로 치우친 급경사" 모양이
 뚜렷해진다. (둘 다 `02_sink_position.py` 산출물.)
 
 **"진짜 튀는 토큰이 있는가" 예시 확인**: [`results/characterization/03_token_bars_L12_img0.png`](results/characterization/03_token_bars_L12_img0.png)
 (`03_token_bars.py`) — 위 그래프들은 값을 정렬하거나 히트맵 색으로 뭉뚱그려서 "특정 토큰
 인덱스"가 눈에 안 들어온다. 여기서는 정렬 없이 197개 토큰(0=CLS, 1~196=patch) 순서
-그대로 선 그래프를 그려서, image 0/L=12에서 PatchFool만 **token 180**(patch 179)에서
-0.432까지 치솟고(같은 자리에서 clean은 0.095, LaVAN은 0.117로 평범한 수준) 나머지는 전부
-평평함을 직접 확인했다 — top1_mass 같은 집계 지표가 아니라 "정말 그 위치 하나가 튀는 것"을
-눈으로 보여주는 가장 직접적인 증거. (이 자리가 우연히 튄 게 아니라 **실제로 공격이 픽셀을
-바꾼 바로 그 patch**인지는 `ground_truth/`가 clean/adv 이미지를 직접 diff해서 이미 확정해
-뒀다 — 정확히 patch 179(0-indexed)에서만 픽셀이 바뀌었고, 위 CLS 스파이크 위치와 정확히
+그대로 선 그래프를 그려서, image 0/L=12에서 PatchFool만 **token 99**(patch 98)에서
+0.453까지 치솟고(같은 자리에서 clean은 0.180, LaVAN은 0.107) 나머지는 전부 평평함을
+직접 확인했다 — top1_mass 같은 집계 지표가 아니라 "정말 그 위치 하나가 튀는 것"을 눈으로
+보여주는 가장 직접적인 증거. (이 자리가 우연히 튄 게 아니라 **실제로 공격이 픽셀을 바꾼
+바로 그 patch**인지는 `ground_truth/`가 clean/adv 이미지를 직접 diff해서 이미 확정해
+뒀다 — 정확히 patch 98(0-indexed)에서만 픽셀이 바뀌었고, 위 CLS 스파이크 위치와 정확히
 일치한다. `patch_fool_attack`은 `attn_layer_idx=4`에서 CLS가 가장 많이 보는 patch 하나를
 고른 뒤 그 patch 안에만 마스크를 씌워 perturbation을 넣으므로, "L=4에서 고른 그 patch가
 L=12에서도 계속, 그리고 이제는 다른 토큰들에게도 sink로 남는다"는 뜻.)
 
-**CLS 말고 다른 토큰들도 그 patch를 보는가**: [`results/characterization/04_column_check_L12_img0_tok180.png`](results/characterization/04_column_check_L12_img0_tok180.png)
+**CLS 말고 다른 토큰들도 그 patch를 보는가**: [`results/characterization/04_column_check_L12_img0_tok99.png`](results/characterization/04_column_check_L12_img0_tok99.png)
 (`04_column_check.py`) — 03의 발견은 "CLS 하나"의 관점이다. PatchFool 논문 주장(공격이
 attention을 특정 patch로 강하게 끌어당긴다)이 맞다면, CLS뿐 아니라 나머지 196개 patch
-쿼리도 token 180을 봐야 한다. 실제로 확인해보니:
+쿼리도 token 99를 봐야 한다. 실제로 확인해보니:
 
-| | CLS -> 180 | patch-쿼리 196개 평균 -> 180 | >0.3인 patch-쿼리 비율 |
+| | CLS -> 99 | patch-쿼리 196개 평균 -> 99 | >0.3인 patch-쿼리 비율 |
 |---|---|---|---|
-| Clean | 0.095 | 0.082 | 0% |
-| **PatchFool** | **0.432** | **0.243** | **31.1%** |
-| LaVAN | 0.117 | 0.093 | 0% |
+| Clean | 0.180 | 0.145 | 0% |
+| **PatchFool** | **0.453** | **0.525** | **92.9%** |
+| LaVAN | 0.107 | 0.090 | 0% |
 
-균등분포 기준선은 1/197=0.005. PatchFool에서는 CLS뿐 아니라 patch-쿼리 196개 중 31.1%가
-token 180에 0.3 이상의 attention을 주고, 평균도 clean 대비 약 3배(0.082→0.243)로
-올라간다 — clean/LaVAN은 쿼리 인덱스와 무관하게 낮은 수준(0.08~0.12대)에 머무른다.
-CLS만의 특이 현상이 아니라 다른 토큰들도 어느 정도 같이 끌려간다는 뜻이지만, 이전에
-살펴본 이미지(94.9%가 0.3을 넘던 사례)만큼 극단적이진 않다 — "몇 %가 끌려가는가"는
-이미지마다 편차가 크다는 걸 보여주는 사례이기도 하다.
+균등분포 기준선은 1/197=0.005. PatchFool에서는 CLS뿐 아니라 patch-쿼리 196개 중
+92.9%가 token 99에 0.3 이상의 attention을 주고, 평균은 CLS 자신의 값(0.453)보다도
+오히려 높다(0.525) — 즉 CLS 혼자 튀는 게 아니라 **거의 모든 토큰이 CLS보다도 더
+그 자리로 쏠린다**. clean도 baseline 대비 이미 어느 정도 높은 값(0.145)을 갖고 있어서
+(이 이미지 자체가 그 위치에 자연적인 sink 성향을 갖고 있었다는 뜻), PatchFool이 그걸
+3~4배 증폭시킨 그림이다.
 
 ## GT 시스템 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
 
@@ -341,40 +359,40 @@ GT를 그대로 재사용한다:
 attention argmax(`argmax_col_avg`, `argmax_row_avg`)를 대표 이미지 5장에 대해 직접
 대조해봤다(이 비교 자체는 `ground_truth/`에 넣지 않고 별도로 확인함 — GT 폴더는 GT만
 담당). 대표 이미지가 전체 n=100 중 어디서 왔는지(`--repr_start`)에 따라 매번 다른 5장이
-나오므로, 아래 수치는 이번에 뽑힌 5장(global index 20~24) 기준이다:
+나오므로, 아래 수치는 이번에 뽑힌 5장(global index 40~44) 기준이다:
 
 | image | GT patch (겹침) | L=12 attention argmax | 일치? |
 |---|---|---|---|
-| PatchFool 0 | 179 (100%) | 179 | O |
-| PatchFool 1 | 179 (100%) | 179 | O |
-| PatchFool 2 | 0 (100%) | 0 | O |
-| PatchFool 3 | 25 (100%) | 25 | O |
-| PatchFool 4 | 90 (100%) | 90 | O |
-| LaVAN 0 | 131 (100%, 주변 8개 patch 4~75% 부분 겹침) | 179 | X |
-| LaVAN 1 | 131 (동일) | 179 | X |
-| LaVAN 2 | 131 (동일) | 183 | X |
-| LaVAN 3 | 131 (동일) | 25 | X |
-| LaVAN 4 | 131 (동일) | 90 | X |
+| PatchFool 0 | 98 (100%) | 98 | O |
+| PatchFool 1 | 25 (100%) | 25 | O |
+| PatchFool 2 | 166 (100%) | 166 | O |
+| PatchFool 3 | 27 (100%) | 27 | O |
+| PatchFool 4 | 80 (100%) | 170 | X |
+| LaVAN 0 | 131 (100%, 주변 patch 23~93% 부분 겹침) | 98 | X |
+| LaVAN 1 | 131 (동일) | 25 | X |
+| LaVAN 2 | 131 (동일) | 166 | X |
+| LaVAN 3 | 131 (동일) | 146 | X |
+| LaVAN 4 | 131 (동일) | 132 | X |
 
-**PatchFool은 5장 전부 일치(5/5), LaVAN은 5장 전부 불일치(0/5).** LaVAN은 같은 배치
+**PatchFool은 5장 중 4장 일치(4/5), LaVAN은 5장 전부 불일치(0/5).** LaVAN은 같은 배치
 안에서 위치가 고정이라(코드 주석: "배치 내 모든 샘플 동일 위치") 5장 다 patch 131
-언저리를 공격하는데, [`ground_truth/results/lavan/img0.png`](ground_truth/results/lavan/img0.png)에서 보듯 녹슨 고리처럼 나름
-눈에 띄는 물체를 공격해도 attention은 전혀 다른 곳(179)으로 몰린다 — 즉 "정보량이
-적은 배경이라 못 끌어당긴다"보다는, LaVAN이 애초에 attention을 겨냥하지 않는 공격이라는
-게 더 근본적인 이유로 보인다.
+언저리를 공격하는데, [`ground_truth/results/lavan/img0.png`](ground_truth/results/lavan/img0.png)를 보면 attention은 매번 전혀
+다른 곳(이미지마다 제각각인 자기 sink)으로 몰린다 — LaVAN이 공격한 위치가 눈에 띄는
+물체인지 배경인지와 무관하게, 애초에 attention을 겨냥하지 않는 공격이라는 뜻으로 보인다.
 
-**왜 PatchFool은 5/5인가**: 같은 이미지의 **clean(공격 없음) 상태**에서의 L=12
-attention argmax와 비교하면 4/5(image 0,1,3,4)는 PatchFool이 공격한 patch가 **그
+**왜 PatchFool은 4/5인가**: 같은 이미지의 **clean(공격 없음) 상태**에서의 L=12
+attention argmax와 비교하면 4/5(image 0,1,2,3)는 PatchFool이 공격한 patch가 **그
 이미지가 원래(공격 없이도) 갖고 있던 L=12 sink 위치와 정확히 같다** — `attn_layer_idx=4`
 (초반 레이어) 기준으로 고른 patch가 결과적으로 L=12(후반 레이어)의 자연 발생 sink와
-일치한다는 뜻. 나머지 1/5(image 2)는 clean sink(183)와 다른 자리(0)를 공격했는데, 그
-경우엔 공격이 clean sink를 밀어내고 **새 sink를 만들어냈다**(공격 후 관측 argmax도
-183이 아니라 0). 즉 PatchFool은 "이미 sink가 될 자리를 골라 증폭"하거나(4/5), 안 되면
-"직접 새 sink를 만들어서라도"(1/5) 결국 자기 patch를 L=12의 지배적 위치로 만든다 —
-5/5 전부 그 결과는 같다. n=100 전체에서도 patch 25/170/16/179 같은 소수 위치가
-반복적으로 등장하는 것(clean 기준 각각 16/14/10/10회, 100장 중)은 이 "이미지마다 고유한
-자연 sink가 있다"는 관찰과 같은 방향이다. LaVAN은 attention을 전혀 신경 쓰지 않고
-위치를 랜덤(배치당 1곳 고정)으로 골라 공격하므로 그 이미지의 자연 sink와 겹칠 일이
+일치한다는 뜻. 나머지 1/5(image 4)는 clean sink(170)와 다른 자리(80)를 공격했는데, 이
+경우엔 공격이 clean sink를 못 밀어냈다 — 공격 후에도 attention은 여전히 원래 sink(170)에
+머물렀다(공격한 자리 80이 아니라). 즉 PatchFool의 성공(4/5)은 "이미 sink가 될 자리를
+공격 전에 정확히 찾아낸다"는 것이지, "아무 자리나 공격해도 그 자리를 새 sink로 만들 수
+있다"는 뜻은 아니다 — 자연 sink와 다른 곳을 공격하면(1/5) 오히려 실패할 수 있다. n=100
+전체에서도 patch 25/170/16/179 같은 소수 위치가 반복적으로 등장하는 것(clean 기준 각각
+16/14/10/10회, 100장 중)은 이 "이미지마다 고유한 자연 sink가 있다"는 관찰과 같은
+방향이다. LaVAN은 attention을 전혀 신경 쓰지 않고 위치를 랜덤(배치당 1곳 고정)으로
+골라 공격하므로 그 이미지의 자연 sink와 겹칠 일이
 거의 없고, 결과적으로 attention을 자기 위치로 가져오지도 못한다 —
 patch_select='Attn'(PatchFool, attn_layer_idx=4 기준 선택)과 랜덤 위치(LaVAN)의 차이가
 "공격이 attention을 실제로 지배하는가"를 가르는 핵심 변수라는 뜻.
@@ -400,7 +418,7 @@ patch_select='Attn'(PatchFool, attn_layer_idx=4 기준 선택)과 랜덤 위치(
 **L=6~12에서 clean/LaVAN 모두 top-3 위치가 거의 똑같다**(`[25, 170, 179]`류가 계속
 반복됨) — 이 ViT 체크포인트에 레이어와 무관하게 반복되는 고정 sink 위치가 실제로 존재한다는
 직접 증거다(공격과 무관한 모델 자체의 성질). PatchFool의 top-3 비율은 오히려 이 구간에서
-**더 낮다**(예: L=8 PF=0.25 vs clean=0.40, L=9 PF=0.26 vs 0.40) — PatchFool이 걸리면
+**더 낮다**(예: L=8 PF=0.26 vs clean=0.40, L=9 PF=0.27 vs 0.40) — PatchFool이 걸리면
 top-1 위치가 이미지마다 더 다양해진다(= 고정 sink에서 벗어나 이미지별로 다른 위치로
 튄다)는 뜻.
 
@@ -409,7 +427,7 @@ top-1 위치가 이미지마다 더 다양해진다(= 고정 sink에서 벗어�
 
 | L | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| clean vs PatchFool | 0.94 | 0.50 | 0.28 | 0.27 | 0.70 | 0.23 | 0.19 | 0.19 | 0.23 | 0.34 | 0.62 | 0.77 |
+| clean vs PatchFool | 0.96 | 0.45 | 0.21 | 0.23 | 0.80 | 0.25 | 0.16 | 0.19 | 0.26 | 0.45 | 0.62 | 0.76 |
 | clean vs LaVAN | 1.00 | 1.00 | 0.84 | 0.75 | 0.85 | 0.99 | 1.00 | 1.00 | 0.99 | 0.98 | 0.68 | 0.72 |
 
 **해석 — "증폭" 가설은 절반만 맞았다**:
@@ -417,14 +435,14 @@ top-1 위치가 이미지마다 더 다양해진다(= 고정 sink에서 벗어�
   가리킨다** — attention 구조를 안 건드린다는 앞선 결과와 정확히 들어맞는, 위치 수준의
   직접 확인.
 - **PatchFool은 레이어에 따라 반대되는 두 그림을 보인다.** L=6~9(정확히 top-1 mass
-  자체는 chance 근처였던 그 구간)에서는 일치율이 **0.19~0.23으로 매우 낮다** — 이 구간
+  자체는 chance 근처였던 그 구간)에서는 일치율이 **0.16~0.26으로 매우 낮다** — 이 구간
   에서는 "기존 sink 증폭"이 아니라 **"공격이 대부분 이미지에서 새 위치로 옮긴다"**가
-  맞는 설명이다. 반면 L=11~12(실제 탐지 신호가 있는 구간)에서는 일치율이 0.62~0.77로
-  올라간다 — **여기서는 "기존 sink 증폭"이 다수(그러나 전부는 아님, 23~38%는 여전히
+  맞는 설명이다. 반면 L=11~12(실제 탐지 신호가 있는 구간)에서는 일치율이 0.62~0.76로
+  올라간다 — **여기서는 "기존 sink 증폭"이 다수(그러나 전부는 아님, 24~38%는 여전히
   새 위치)**를 차지한다. 즉 2장짜리 정성적 관찰(image 1)은 우연히 L=11~12 스타일의
   사례를 봤던 것이고, 일반화하면 **"L=11~12에서는 증폭이 다수, 중간 레이어에서는 새
   위치 생성이 다수"**로 고쳐 써야 한다.
-- L=1(0.94)은 예외적으로 매우 높은 일치율을 보이는데, top-3 집중도 자체도 0.59로 가장
+- L=1(0.96)은 예외적으로 매우 높은 일치율을 보이는데, top-3 집중도 자체도 0.59로 가장
   높아 애초에 고를 수 있는 "그럴듯한" 위치가 많지 않은(이미지 경계 등 저수준 특징에 좌우되는)
   레이어라는 뜻으로 보인다.
 

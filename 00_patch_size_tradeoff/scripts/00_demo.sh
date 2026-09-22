@@ -7,6 +7,6 @@
 #SBATCH --time=00:45:00
 #SBATCH --output=results/job_logs/nohup_00_demo_%j.txt
 
-source /home/jooyumm/ViT_robust/ViT_tradeoff/scripts/common.sh
+source /home/jooyumm/ViT_robust/00_patch_size_tradeoff/scripts/common.sh
 
 python visualize/00_attack_demo.py --seed 42

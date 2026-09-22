@@ -3,6 +3,10 @@
 # 3개 공격 x 3개 patch size = 9개 조합을 한 GPU에서 순차 실행 (예전엔 스크립트 9개로 나눠서
 # 병렬 제출했지만, 관리 편의를 위해 하나로 합침 — 대신 시간이 오래 걸려서 --time을 넉넉히 잡음).
 # 시드별로 여러 번 제출: sbatch --export=SEED=42 scripts/01_baseline.sh
+#
+# PatchFool은 원래 --pf_attack_mode CE_loss로 덮어써서 patch_fool_attack의 실제
+# 기본값(Attention: CE+attention 손실을 PCGrad로 결합)을 안 쓰고 있었다 -- 실수로 들어간
+# 덮어쓰기라 제거했다. PGD/LaVAN은 원래부터 아무 덮어쓰기 없이 각 함수 기본값 그대로였다.
 #SBATCH --job-name=vit_01_baseline
 #SBATCH --partition=suma_rtx4090
 #SBATCH --qos=base_qos
@@ -10,7 +14,7 @@
 #SBATCH --time=15:00:00
 #SBATCH --output=results/job_logs/nohup_01_baseline_%j.txt
 
-source /home/jooyumm/ViT_robust/ViT_tradeoff/scripts/common.sh
+source /home/jooyumm/ViT_robust/00_patch_size_tradeoff/scripts/common.sh
 
 for P in 8 16 32; do
   BS=16; PF_BS=8
@@ -24,5 +28,5 @@ for P in 8 16 32; do
 
   python experiments/main.py --attacks patch_fool --patch_sizes "$P" \
     --num_samples 1000 --batch_size "$PF_BS" \
-    --pf_attack_mode CE_loss --pf_iters 250 --seed "$SEED"
+    --pf_iters 250 --seed "$SEED"
 done
