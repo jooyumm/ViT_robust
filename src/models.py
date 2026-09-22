@@ -1,14 +1,14 @@
 """
-src/models.py — patch_size_tradeoff/patch_switch_defense/patch_attack_detector가 공유하는 모델 로딩 코드.
+src/models.py — 00_patch_size_tradeoff/02_patch_switch_defense/01_patch_attack_detector가 공유하는 모델 로딩 코드.
 
 2026-09-21 이전에는 세 프로젝트 각자가 이 파일(과 dataset.py, attacks/patch_fool.py,
 attacks/lavan.py)의 사본을 갖고 있었다("형제 프로젝트에 의존하지 않는다"는 원칙 —
-patch_switch_defense/README.md, patch_attack_detector/README.md 참고). 세 사본이 완전히 같은 내용이라
+02_patch_switch_defense/README.md, 01_patch_attack_detector/README.md 참고). 세 사본이 완전히 같은 내용이라
 편집 시 셋 다 따로 고쳐야 하는 게 비효율적이라 이 위치(ViT_robust/src/)로 합쳤다. 각
 프로젝트는 이제 이 파일을 직접 import한다(각자의 sys.path 설정에서 ViT_robust를 추가).
 
-MODEL_NAMES에 P32가 남아있는 건 patch_size_tradeoff가 P8/P16/P32를 다 쓰기 때문 —
-patch_switch_defense/patch_attack_detector는 P8/P16만 쓰고 P32는 그냥 안 부른다(코드에서 막아둔 게 아니라
+MODEL_NAMES에 P32가 남아있는 건 00_patch_size_tradeoff가 P8/P16/P32를 다 쓰기 때문 —
+02_patch_switch_defense/01_patch_attack_detector는 P8/P16만 쓰고 P32는 그냥 안 부른다(코드에서 막아둔 게 아니라
 그 프로젝트들의 실험 스크립트가 32를 요청하지 않는 것뿐).
 """
 import torch

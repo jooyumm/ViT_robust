@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from src.models import MODEL_NAMES
 
-# patch_size_tradeoff/patch_switch_defense/patch_attack_detector가 공유하는 데이터 로딩 코드
+# 00_patch_size_tradeoff/02_patch_switch_defense/01_patch_attack_detector가 공유하는 데이터 로딩 코드
 # (2026-09-21에 세 프로젝트 각자의 사본을 여기로 합침 — models.py 헤더 참고).
 #
 # 우리가 쓰는 체크포인트(vit_base_patch{8,16,32}_224 augreg 계열)는 학습 시
