@@ -266,7 +266,11 @@ block 전부의 헤드별 attention(B,12 heads,197,197)을 수집. 레이어마�
 그대로 선 그래프를 그려서, image 0/L=12에서 PatchFool만 **patch 17**에서 0.63까지 치솟고
 (같은 자리에서 clean은 0.11, LaVAN은 거의 0으로 평범한 수준) 나머지는 전부 평평함을 직접
 확인했다 — top1_mass 같은 집계 지표가 아니라 "정말 그 위치 하나가 튀는 것"을 눈으로 보여주는
-가장 직접적인 증거.
+가장 직접적인 증거. (patch 17이 우연히 튄 게 아니라 **실제로 공격이 픽셀을 바꾼 바로 그
+patch**인지도 clean/adv 이미지를 직접 diff해서 확인함 — 정확히 patch 17(0-indexed 16)에서만
+픽셀이 바뀌었다. `patch_fool_attack`은 `attn_layer_idx=4`에서 CLS가 가장 많이 보는 patch
+하나를 고른 뒤 그 patch 안에만 마스크를 씌워 perturbation을 넣으므로, "L=4에서 고른 그
+patch가 L=12에서도 계속, 그리고 이제는 거의 모든 토큰에게 sink로 남는다"는 뜻.)
 
 **CLS 말고 다른 토큰들도 patch 17을 보는가**: [`results/characterization/04_column_check_L12_img0_tok17.png`](results/characterization/04_column_check_L12_img0_tok17.png)
 (`04_column_check.py`) — 03의 발견은 "CLS 하나"의 관점이다. PatchFool 논문 주장(공격이
