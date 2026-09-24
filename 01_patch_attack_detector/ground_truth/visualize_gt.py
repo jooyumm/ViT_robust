@@ -3,8 +3,8 @@ ground_truth/visualize_gt.py — PatchFool/LaVAN 각각 예시 이미지 한 장
 어느 patch를 건드렸는가"(coverage.gt_coverage로 픽셀 diff에서 계산)를 그림으로 보여준다.
 공격이 어떻게 생겼는지 예시를 보여주는 용도 — attention/탐지기는 다루지 않는다.
 
-GT 자체(gt_coverage/repr_images)는 characterization의 00_extract_attention.py가 이미
-npz에 저장해 뒀다(GPU 필요한 단계는 거기뿐) — 여기서는 그 npz를 읽기만 한다.
+과거 NPZ에 저장된 gt_coverage/repr_images를 읽는 독립적인 예시 도구이다.
+현재 characterization의 추출·분석 코드에는 의존하지 않는다.
 
 사용법:
   python visualize_gt.py --num_samples 100
@@ -15,11 +15,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DETECT_ROOT = os.path.dirname(HERE)   # 01_patch_attack_detector
-CHAR_DIR = os.path.join(DETECT_ROOT, 'experiments', 'characterization')
 sys.path.insert(0, HERE)       # for `import coverage/draw_boxes`
-sys.path.insert(0, CHAR_DIR)   # for `import data_io` (attention npz 로더)
 
-from data_io import load_attention_data
+import numpy as np
 from draw_boxes import plot_gt_locations
 
 ATTACKED_GROUPS = ('patchfool', 'lavan')
@@ -33,16 +31,14 @@ def main():
 
     npz_path = os.path.join(DETECT_ROOT, 'results', 'characterization',
                              f'00_attention_data_n{args.num_samples}.npz')
-    assert os.path.exists(npz_path), \
-        f"{npz_path} 없음 — 먼저 characterization/00_extract_attention.py " \
-        f"--num_samples {args.num_samples} 실행할 것"
-    _, repr_by_group, _ = load_attention_data(npz_path)
-
-    for g in ATTACKED_GROUPS:
-        if 'gt_coverage' not in repr_by_group.get(g, {}):
-            raise SystemExit(
-                f"이 npz는 {g}__gt_coverage_repr 필드가 없는 구버전입니다 — "
-                "00_extract_attention.py를 다시 실행해서 npz를 새로 만드세요.")
+    if not os.path.exists(npz_path):
+        raise SystemExit(f"과거 GT 예시 데이터가 없습니다: {npz_path}")
+    repr_by_group = {}
+    with np.load(npz_path, allow_pickle=False) as archive:
+        for group in ('clean', *ATTACKED_GROUPS):
+            repr_by_group[group] = {'images': archive[group + '__repr_images']}
+            if group != 'clean':
+                repr_by_group[group]['gt_coverage'] = archive[group + '__gt_coverage_repr']
 
     out_dir = os.path.join(HERE, 'results')
     os.makedirs(out_dir, exist_ok=True)

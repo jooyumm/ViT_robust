@@ -10,8 +10,8 @@ PatchFool은 선택된 patch 하나(16x16 grid cell)에만 마스크를 씌워 p
 diff가 정확히 그 셀 하나를 가득 채운다. LaVAN은 면적 비율(patch_ratio)로 정한 정사각형을
 16px 그리드에 정렬 없이 랜덤 위치에 놓으므로, 여러 grid cell에 걸쳐 부분적으로만 겹친다 —
 그래서 "정확히 어느 patch"가 아니라 "각 patch가 얼마나 겹쳤는지(0~1 비율)"로 표현한다.
-patch 인덱스 규약(patch 0~195, row*ppl+col)은 attention_lib.py와 동일하게 맞춰뒀다 — 나중에
-탐지기 출력과 대조할 때 같은 축을 바로 쓸 수 있도록.
+patch 인덱스는 행 우선 순서(row*ppl+col, 기본값에서 0~195)이다.
+CLS가 0번 토큰인 attention 배열과 비교할 때 patch 인덱스 p는 토큰 인덱스 p+1에 대응한다.
 """
 import torch
 
@@ -20,10 +20,10 @@ PPL = 14
 
 
 def gt_coverage(clean_img, adv_img, patch_size=PATCH_SIZE, ppl=PPL, threshold=1e-6):
-    """clean_img/adv_img: (3, H, W) 텐서 한 장. 196개 patch 각각에서 실제로 픽셀 값이
-    바뀐 비율(0~1)을 (196,) ndarray로 반환 — attention_lib의 row_avg/col_avg와 같은
-    patch 인덱스 규약(row*ppl+col). PatchFool이면 정확히 한 자리만 1.0, 나머지는 0.0.
-    LaVAN이면 여러 자리에 0~1 사이 분수 값이 걸쳐 있을 수 있다."""
+    """clean_img/adv_img: (3, H, W) 텐서 한 장.
+    각 patch에서 채널별 절대 차이의 합이 threshold를 초과한 픽셀의 비율(0~1)을
+    (ppl*ppl,) ndarray로 반환한다. 인덱스는 row*ppl+col이며 CLS는 포함하지 않는다.
+    LaVAN처럼 여러 patch에 걸친 공격은 여러 위치에 부분 비율이 기록될 수 있다."""
     diff_mask = (adv_img - clean_img).abs().sum(dim=0) > threshold   # (H, W) bool
     cov = torch.zeros(ppl * ppl)
     for pr in range(ppl):

@@ -21,240 +21,115 @@ Dual-Gate 등), 두 번째 버전이 생기기 전에 미리 버전이 드러나
 나올 개선된 탐지기는 `detector/dual_gate_v2.py`처럼 이 파일과 나란히 추가되고, 이 파일
 자체는 바뀌지 않는다(`02_patch_switch_defense`가 실제 배포에 쓰는 버전이 바로 이것이므로).
 
-## 핵심 결과 요약
+## 현재 디렉토리 구조
 
-**Raw attention 특성 관찰** (`experiments/characterization/`, 탐지기 설계 아님 — 순수 관찰):
-질문은 딱 하나 — "공격이 정말 토큰 하나로 쏠리는가, 모든 레이어에서 그런가". 답은 **"L=11~12
-에서만 그렇다, 나머지 레이어는 아니다"**. LaVAN은 어느 레이어에서도 안 쏠린다. 자세한 내용은
-아래 "Raw attention 특성 관찰" 절 참고.
+```text
+experiments/characterization/
+  01_extract_paired_attention.py          동일 쌍의 이미지·예측·attention·GT 추출
+  02_compare_attention_success_failure.py 성공/실패 비교, 전체 레이어 및 특이 레이어 분석
 
-## 디렉토리 구조
-
-```
-ViT_robust/
-  src/                         모델/데이터셋/공격 코드 — 00_patch_size_tradeoff/02_patch_switch_defense/
-                                01_patch_attack_detector 세 프로젝트가 공유(아래 "공유 src/" 참고)
-
-01_patch_attack_detector/
-  detector/                    탐지기 구현들 — 방어 로직(02_patch_switch_defense)과 분리해서 이
-                                프로젝트에서만 독립적으로 발전시킨다
-    topk_mass_v1.py              현재 02_patch_switch_defense가 실배포에 쓰는 v1(raw attention
-                                  L=12, top4_mass, top-1 argmax) — 위 "메커니즘" 참고
-
-  experiments/
-    characterization/            "공격이 토큰 하나로 쏠리는가, 모든 레이어에서 그런가"만
-                                  본다(탐지기 설계 아님), 번호는 실행 순서:
-      attention_lib.py             저수준: 헤드별 attention hook + 분포/집중도 계산 함수
-      attack_gen.py                 PatchFool/LaVAN 공격 생성(00/03이 공유, 재현성용)
-      00_extract_attention.py         GPU 필요한 유일한 단계. clean/PatchFool/LaVAN 생성 +
-                                    attention 추출 + GT(gt_coverage) -> npz 하나로 저장
-      data_io.py                   그 npz를 다시 불러오는 로더
-      plotting.py                  01/02가 공유하는 그림 함수
-      01_concentration.py        레이어별 top-1 mass(한 토큰이 가져가는 비율) — 핵심 질문에
-                                    대한 정량적 답 (npz만 읽음, GPU 불필요)
-      02_token_bars.py            대표 이미지 1장 x 레이어 1개로 "진짜 토큰 하나가 튀는지"
-                                    눈으로 확인 (npz만 읽음, GPU 불필요)
-      03_attack_outcome_compare.py  공격 성공(오분류)/실패(여전히 정답) 이미지를 하나씩
-                                    뽑아 attention을 비교 — attention 왜곡이 실제 오분류와
-                                    같이 가는지 확인 (GPU 필요, 공격 재생성). 어느 이미지를
-                                    골랐는지는 실행할 때마다 03_outcome_compare_selection.json
-                                    에 다시 저장(덮어씀) — 파라미터가 바뀌면 선택도 바뀔 수
-                                    있어서 로그 대신 파일로 남긴다
-
-  ground_truth/                  "공격이 실제로 어디를 건드렸는가"(픽셀 diff)를 계산해주는
-                                  라이브러리 — attention이나 탐지기 출력과 비교하는 로직은
-                                  여기 없다. characterization 하나에 묶인 게 아니라, 앞으로
-                                  어떤 실험이든(탐지기 테스트 등) GT가 필요하면 가져다 쓰는
-                                  공용 코드라서 이 프로젝트 최상위에 둔다.
-    coverage.py                    저수준: clean/adv 픽셀 diff로 "어느 patch를 얼마나
-                                    건드렸는지"(196차원 coverage)를 계산하는 ground truth 함수
-    draw_boxes.py                   GT로 확정된 patch를 박스로 원본/공격/diff 이미지 위에
-                                    그리는 그림 함수 — attention 정보 없음
-    visualize_gt.py                실행 스크립트. 공격 예시 하나씩(patchfool.png/lavan.png)
-                                    만 보여주는 용도 — characterization의
-                                    00_extract_attention.py가 저장한 npz만 읽는다
-                                    (GPU 불필요)
-    results/
-      patchfool.png                 PatchFool 공격 예시 1장
-      lavan.png                     LaVAN 공격 예시 1장
-
-  results/
-    characterization/           위 실험들의 결과물 (npz/png/md, GT 관련 제외 — ground_truth/results/ 참고)
+detector/topk_mass_v1.py                  다른 방어 프로젝트에서 사용하는 공유 탐지기
+ground_truth/                            GT 계산·표시 도구
+results/characterization/
+  attention_comparison/<run>/            현재 실험의 실행별 데이터와 분석 결과
+  ...                                   과거 결과 (현재 실험의 입력으로 사용하지 않음)
 ```
 
-## 이력
+모델·데이터셋·공격 구현은 저장소 루트의 `src/`를 사용한다. 탐지기와 GT 도구는
+`characterization` 정리 범위 밖의 별도 기능이다. `ground_truth/visualize_gt.py`는 과거
+NPZ 예시를 직접 읽으며 현재 실험 코드에 의존하지 않는다.
 
-`detector/topk_mass_v1.py`는 `02_patch_switch_defense/defense/detector.py`에서 코드 한 글자도
-바꾸지 않고 옮겨왔다 — 원본의 두 커밋(`92f4389`, `ebf8a89`) 이력을 그대로 재구성해 이
-저장소의 git 로그에 남겼다(`git log -- detector/topk_mass_v1.py`로 확인 가능, 각 커밋
-메시지에 원본 커밋 해시 명시). 이후 `src/detector.py` → `detector/topk_mass_v1.py`로 한 번
-더 옮겼는데, 이건 같은 저장소 안의 이동이라 `git mv` 이력이 자동으로 이어진다.
+## 공격 전후 attention과 성공/실패 비교: 동일 이미지의 공격 전후 attention과 공격 성공/실패 비교
 
-## 공유 src/ (`ViT_robust/src/`)
+**질문**: 같은 이미지에서 attention 맵이 어떻게 변하며, 그 변화는 공격 성공과 실패에서
+어떻게 다른가? 먼저 모든 레이어를 관찰하고, 변화가 두드러진 레이어와 앞뒤 레이어·헤드를 확인한다.
 
-**2026-09-21 이전**: 이 프로젝트의 `experiments/` 스크립트들은 표본/공격 생성을 위해
-`02_patch_switch_defense`의 `src/`(models.py, dataset.py, attacks/)를 cross-import했었다.
+코드는 두 단계로 통일했다.
 
-**2026-09-21**: `00_patch_size_tradeoff`/`02_patch_switch_defense`/`01_patch_attack_detector` 세 프로젝트가 완전히 같은
-`src/` 내용을 각자 사본으로 들고 있는 게(편집할 때 셋 다 따로 고쳐야 함) 비효율적이라
-판단해, `ViT_robust/src/`(이 저장소들의 공통 상위 폴더)로 합쳤다 — 세 프로젝트 모두 이제
-직접 이 위치를 import한다(자세한 배경은 `ViT_robust/README.md`). 이 프로젝트의
-`experiments/` 스크립트는 `sys.path`에 `ViT_robust`를 추가해 `from src.models import ...`
-식으로 쓴다.
+| 파일 | 역할 |
+|---|---|
+| `experiments/characterization/01_extract_paired_attention.py` | 같은 공격 실행에서 이미지·예측·헤드별 CLS attention·GT를 함께 추출 |
+| `experiments/characterization/02_compare_attention_success_failure.py` | 해당 실행 폴더만 검증해서 읽고 전체 레이어, 성공/실패, 특이 레이어 후보를 분석 |
 
-`detector/`는 다르다 — 원래부터 여러 방어 프로젝트가 공유해야 하는 단일 소스이길 원해서
-이 프로젝트에만 있는 것이 애초에 이 프로젝트가 생긴 이유다(위 "메커니즘" 참고). `src/`가
-공유로 바뀐 지금도 `detector/`는 여전히 이 프로젝트 소유이고, `02_patch_switch_defense`가
-cross-import하는 유일한 대상이다 — 아래 절 참고.
+### 동일 값 비교의 조건
 
-## 쓰는 곳 (cross-project import, `detector/`만 해당)
+- clean과 공격 후 각각 한 번의 forward에서 logits와 attention을 함께 수집한다.
+- 표본 ID와 원본 경로, 정답, 예측, 공격 이미지, 모든 레이어·헤드의 CLS attention을 저장한다.
+- 실제 clean–attack 픽셀 차이로 GT coverage를 계산한다. clean과 attack에 **같은 GT 위치**를 적용한다.
+- 성공은 clean 정답 → 공격 후 오답, 실패는 clean 정답 → 공격 후 정답이다.
+  clean부터 오답인 표본도 저장하지만 두 집단의 비교에서는 제외한다.
+- 실행 ID와 파일 SHA256, 표본 순서, 이미지로 재계산한 GT, logits의 argmax와 저장 예측,
+  성공/실패 판정 및 확률 질량을 검증한다. 다른 실행이나 미완료 실행은 분석하지 않는다.
+- 모델 파라미터 지문, 코드 지문, 공격 인자, 라이브러리 버전을 manifest에 남긴다.
+  배치 크기는 공격 난수와 LaVAN 위치에 영향을 주므로 재현 시 동일하게 유지한다.
 
-`02_patch_switch_defense`의 실험 스크립트는 `sys.path`에 `01_patch_attack_detector` ROOT를 추가해
-`from detector.topk_mass_v1 import ...`로 직접 import한다. 현재 이 방식을 쓰는 곳은
-`02_patch_switch_defense/experiments/{system_comparison,cost_comparison,
-local_switch_posenc_ablation}/*_test.py` 3곳이다. `defense/all_switch.py`/
-`defense/local_switch.py` 자체는 탐지기를 호출하지 않는다(이미 계산된 `flag_idx`를
-파라미터로만 받음). `src/`가 이제 진짜로 공유되므로(위 절 참고), 예전에 있었던 "`src`
-패키지 이름 충돌 방지를 위한 sys.path 순서" 문제는 더 이상 없다 — `02_patch_switch_defense`와
-`01_patch_attack_detector` 둘 다 같은 `ViT_robust/src/`를 가리키므로 순서 무관하게 항상 같은 곳으로
-resolve된다.
+**기존 자료와 관계**: 과거 실험 스크립트와 사용하지 않는 보조 모듈은 삭제했다.
+과거 결과 파일은 보존하지만, 예측·GT 연결이 없는 자료를 현재 성공/실패 비교에 섞지 않는다.
+현재 분석 입력은 새 추출기가 저장한 `manifest.json`과 `data/chunk_*.npz`뿐이다.
 
-## Raw attention 특성 관찰 (`experiments/characterization/`)
+### 실행 순서 (사용자가 실행)
 
-**질문**: 공격이 정말 토큰 하나로 쏠리는가, 그 경향이 모든 레이어에서 같은가. AUROC/threshold/
-flag 계산 없음 — PatchFool/LaVAN이 attention을 실제로 어떻게 바꾸는지만 본다.
-
-**방법**: 같은 기본 이미지 n=100장(seed=42)에서 clean/PatchFool(attn_layer_idx=4,
-attack_mode='Attention', 250 iters)/LaVAN(patch_ratio=0.02, 40 steps) 세 그룹을 만들고,
-forward 1회로 12개 block 전부의 헤드별 attention을 수집. 레이어마다 CLS→patch 행(row,
-detector의 대상과 동일)에서 top-1 mass(가장 많이 보는 토큰 하나가 가져가는 비율)를
-계산했다(`00_extract_attention.py`, RTX 4090).
-
-**attack_mode 버그**: `chunked_patch_fool`이 원래 `attack_mode='CE_loss'`로 덮어써서
-`patch_fool_attack`의 실제 기본값(`'Attention'`: CE loss와 attention loss를 PCGrad로
-결합)을 안 쓰고 있었다. 기본값으로 되돌리려다 `src/attacks/patch_fool.py`의 진짜 버그를
-발견했다 — attention을 가로채는 forward hook(`_make_attn_hook`)이 `torch.no_grad()` +
-`.detach()`로 짜여 있어서, patch 선택(1회, gradient 불필요)에는 맞지만 공격 루프 안에서
-attention loss의 gradient를 `delta`까지 역전파하는 데는 못 쓴다 — 실제로 시도하면
-"element 0 of tensors does not require grad" 에러로 즉시 죽는다. 즉 `attack_mode=
-'Attention'`은 이 코드베이스에서 **한 번도 정상 동작한 적이 없었다**. 원본 논문 저장소
-([RICE-EIC/Patch-Fool](https://github.com/RICE-EIC/Patch-Fool))는 모델 forward가
-attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모델을 그대로 쓰면서 hook으로
-가로채다 보니 생긴 문제였다. `_make_attn_hook_grad`/`_collect_attn_grad`(no_grad/detach
-없는 버전)를 추가해서 공격 루프 안에서만 쓰도록 고쳤다 — 아래 결과는 이 수정 이후, 진짜
-`attack_mode='Attention'`으로 뽑은 것이다.
-
-**결과**: 레이어별 top-1 mass(CLS row, 헤드평균) 중앙값 —
-
-| L | clean | PatchFool | LaVAN | PF−clean |
-|---|---|---|---|---|
-| 1 | 0.0136 | 0.0137 | 0.0136 | +0.0001 |
-| 2 | 0.0156 | 0.0187 | 0.0156 | +0.0031 |
-| 3 | 0.0151 | 0.0209 | 0.0149 | +0.0059 |
-| 4 | 0.0142 | 0.0224 | 0.0149 | +0.0082 |
-| 5 | 0.0208 | 0.0291 | 0.0210 | +0.0083 |
-| 6 | 0.0495 | 0.0471 | 0.0489 | −0.0025 |
-| 7 | 0.1154 | 0.1093 | 0.1179 | −0.0061 |
-| 8 | 0.1743 | 0.1632 | 0.1784 | −0.0111 |
-| 9 | 0.2176 | 0.1951 | 0.2105 | −0.0225 |
-| 10 | 0.1851 | 0.1848 | 0.1719 | −0.0003 |
-| 11 | 0.1202 | 0.2899 | 0.1060 | **+0.1697** |
-| 12 | 0.1536 | 0.4365 | 0.1273 | **+0.2829** |
-
-전체 표는 [`results/characterization/01_concentration_summary_n100.md`](results/characterization/01_concentration_summary_n100.md)
-(`01_concentration.py` 산출물).
-
-**답 — 교수님 질문("토큰 하나로 쏠리는가, 모든 레이어에서 그런가")**:
-
-1. **아니다, 모든 레이어에서 그런 게 아니다.** L=1~10은 PatchFool도 clean/LaVAN과 top-1
-   mass가 거의 같다. **L=11~12에서만** PatchFool이 뚜렷이 튄다(0.12→0.29, 0.15→0.44) —
-   "쏠림"은 레이어 전체가 아니라 후반 2개 레이어에서만 나타나는 현상이다.
-   [`results/characterization/01_layer_comparison_top1_row.png`](results/characterization/01_layer_comparison_top1_row.png)
-2. **LaVAN은 어느 레이어에서도 안 쏠린다** — 모든 레이어에서 중앙값이 clean과 거의 겹친다
-   (최대 편차 L=12에서 −0.026). raw attention만으로 LaVAN을 못 잡는 이유다.
-   [`results/characterization/01_hist_top1_row_by_layer.png`](results/characterization/01_hist_top1_row_by_layer.png)의
-   L=11/L=12 패널을 보면 PatchFool이 긴 꼬리(최대 0.6~0.8)를 만드는데, 쏠리는 이미지와
-   안 쏠리는 이미지가 섞여 있다는 뜻이다(전부가 쏠리는 게 아님).
-
-**진짜 토큰 하나가 튀는지 예시로 확인**:
-[`results/characterization/02_token_bars_L12_img0.png`](results/characterization/02_token_bars_L12_img0.png) —
-197개 토큰을 정렬 없이 그대로 그려서, image 0/L=12에서 PatchFool만 **token 99**(patch 98)
-에서 0.453까지 치솟고(clean 0.180, LaVAN 0.107) 나머지는 평평함을 확인했다. 이 자리가
-진짜 공격당한 patch인지도 `ground_truth/`로 확정해 뒀다 — 정확히 patch 98(0-indexed)에서만
-픽셀이 바뀌었고, 이 스파이크 위치와 정확히 일치한다.
-
-**범위 제한**: 탐지 임계값/AUROC/flag 판정 없음. 레이어 결합·Dual-Gate 설계는 이 결과를
-보고 다음 단계에서 논의한다.
-
-## attention 왜곡이 실제 오분류와 같이 가는가 (`03_attack_outcome_compare.py`)
-
-지금까지는 "attention이 튀는가"만 봤다. 진짜 궁금한 건 그게 **공격 성공(오분류)**과
-관련 있는가다. n=100 중 clean일 때 맞았던 87장을 공격 후 결과로 나누면 오분류 79장,
-여전히 정답 8장 — 이 중 한 장씩 뽑아 L=12 attention을 비교했다
-([`results/characterization/03_outcome_compare_L12.png`](results/characterization/03_outcome_compare_L12.png)).
-어느 이미지를 골랐는지는 `results/characterization/03_outcome_compare_selection.json`에
-실행할 때마다 다시 저장된다(파라미터가 바뀌면 후보 이미지도 달라질 수 있어서):
-
-- **공격 성공 (image 0, 이불 사진, true=750→오분류 761)**: GT patch 16에서 clean 0.11 →
-  PatchFool 0.46으로 **4배 이상 증폭**.
-- **공격 실패 (image 11, 스쿠터 사진, true=670, 공격 후에도 670 그대로)**: GT patch 170에서
-  clean 0.32 → PatchFool 0.32로 **거의 증폭이 없다** — clean과 PatchFool 곡선이 그 지점에서
-  거의 완전히 겹친다.
-
-**흥미로운 점**: 절대적인 attention 값만 보면 실패 사례(0.32)가 성공 사례(0.46)보다 크게
-낮지도 않다 — "얼마나 쏠리는가" 자체는 두 경우 다 높다. 차이는 **clean 대비 얼마나
-증폭됐는가**다: 성공 사례는 원래 낮았던 자리를 공격이 4배 이상 끌어올렸고, 실패 사례는
-원래(clean 상태에서) 이미 강한 자연 sink(0.32)였던 자리를 공격이 목표로 삼았지만 더
-끌어올릴 여지가 없어서 아무 효과가 없었다 — 앞서 characterization 예시(공격이 이미 강한
-자연 sink와 다른 자리를 공격했다가 실패한 사례)와 같은 방향의 관찰이다. 표본 2장뿐인
-일회성 확인이라 일반화하려면 더 봐야 한다.
-
-## GT 라이브러리 (`ground_truth/`) — "정말 그런지" 눈대중이 아니라 픽셀로 확정
-
-**공격이 실제로 어느 patch를 얼마나 건드렸는지를 pixel diff로 계산하는 ground truth
-코드**다. 이 폴더는 characterization 하나에 속한 게 아니라, 앞으로 어떤 실험이든(탐지기
-테스트 등) "공격이 진짜 어디 있었는지"가 필요하면 가져다 쓰는 **공용 라이브러리** 역할을
-한다 — attention이나 탐지기 출력과 비교하는 로직은 여기 없고, 그건 그 GT를 가져다 쓰는
-쪽(예: characterization의 03)이 각자 알아서 한다:
-
-- `ground_truth/coverage.py`의 `gt_coverage(clean_img, adv_img)`: 두 이미지를 직접 빼서
-  (추정 아님) 196개 patch 각각에서 실제로 바뀐 픽셀 비율(0~1)을 계산. PatchFool은 정확히
-  patch 1개만 1.0, 나머지는 0. LaVAN은 16px 그리드에 정렬 안 된 위치에 놓이므로 여러
-  patch에 걸쳐 부분 비율로 나뉜다.
-- `ground_truth/draw_boxes.py`의 `plot_gt_locations(...)`: 그 GT를 박스로 원본/공격/diff
-  이미지 위에 그린다.
-- `ground_truth/visualize_gt.py`: 위 둘을 이용해 PatchFool/LaVAN 공격이 어떻게 생겼는지
-  예시 한 장씩만 보여준다(`results/patchfool.png`, `results/lavan.png`) — 체계적인 비교가
-  아니라 "공격이 대충 이렇게 생겼다"를 보여주는 용도.
-
-## 04 — 공격 후 attention은 어디로 이동하는가?
-
-`experiments/characterization/04_attention_redistribution.py`는 기존
-`results/characterization/00_attention_data_n100.npz`만 읽는 CPU 분석이다.
-공격을 다시 만들거나 다른 실행의 성공/실패 결과를 섞지 않는다.
+저장소 루트에서, 추출은 GPU 노드에서 실행한다. 아래 경로는 아직 존재하지 않는 새 폴더여야 한다.
 
 ```bash
-python 01_patch_attack_detector/experiments/characterization/04_attention_redistribution.py
+python 01_patch_attack_detector/experiments/characterization/01_extract_paired_attention.py \
+  --num_samples 100 --batch_size 10 --seed 42 \
+  --output 01_patch_attack_detector/results/characterization/attention_comparison/run_s42
+
+python 01_patch_attack_detector/experiments/characterization/02_compare_attention_success_failure.py \
+  --run 01_patch_attack_detector/results/characterization/attention_comparison/run_s42
 ```
 
-출력: `results/characterization/04_attention_redistribution/`.
+추출기의 `--output`을 생략하면 시각과 실행 ID로 새 폴더를 만든다. 재시작 이어받기는 지원하지 않으며,
+중단된 실행에는 `complete=false`가 남는다. 분석도 기본 `analysis/`가 이미 있으면 덮어쓰지 않는다.
+재분석은 `--output .../analysis_v2`처럼 새 폴더를 지정한다. 분석에는 GPU가 필요 없다.
 
-- `attention_redistribution_overview.png`: 전체 100장의 최댓값 patch 위치 변경률,
-  대표 5장의 공격 영역·나머지 patch·CLS attention 증감, 분포의 총변동거리.
-  CLS query와 전체 query 평균을 구분한다. 음영은 대표 표본의 min–max이다.
-- `*_example*_spatial_attention_shift.png`: 원본·공격 이미지와
-  레이어별 clean attention / attack attention / 차이 지도. 청록색 테두리는 실제 변경된
-  patch 토큰, 차이 지도의 빨강은 증가, 파랑은 감소이다. 기본 L1/L6/L12이며
-  `--layers 3 9 12`처럼 지정할 수 있다.
-- `argmax_location_changes.csv`, `regional_attention_changes.csv`,
-  `per_token_attention_changes.csv`: 그림의 수치 및 전체 레이어·토큰별 변화량.
+결과는 한 실행 폴더 안에 모인다.
 
-분포는 head 평균 raw attention을 사용하며 CLS를 제거하거나 patch 부분을 재정규화하지
-않는다. 공격 영역 + 비공격 영역 + CLS의 변화량 합은 0이다. 공격 영역은 coverage > 0인
-토큰 전체로 정의한다. 부분적으로 공격받은 LaVAN 토큰도 포함하므로 픽셀별 중요도가 아니다.
-총변동거리는 CLS를 포함한 `0.5 × Σ|attack − clean|`이다.
+```text
+attention_comparison/<run>/
+  manifest.json                 실행 설정, 표본 ID/경로, 모델·코드·청크 지문, 완료 여부
+  data/chunk_*.npz              같은 실행의 전체 이미지·logits·예측·헤드별 attention·GT
+  analysis/
+    *_success_failure_by_layer.png  12개 레이어의 성공/실패 중앙값과 IQR
+    maps/                          선정 사례의 전체 12레이어 clean / attack / 차이 맵
+    layer_details/                 후보 레이어와 앞뒤 맵, 사례별 레이어×헤드 지도
+    samples.csv                    전체 표본의 정답·예측·성공/실패·GT 크기
+    per_sample_layer.csv           전체 표본의 레이어별 TV·GT/비GT/CLS 증감
+    per_sample_head.csv            전체 표본의 레이어·헤드별 GT 증감과 TV
+    success_failure_summary.csv    성공/실패별 표본 수·사분위 통계
+    layer_candidates.csv           레이어 후보와 선정 근거
+    selected_examples.csv          사례별 선정 이유
+    analysis_settings.json         입력/분석 코드 지문과 공통 색 범위
+    README.md                      결과 해석 기준
+```
 
-**범위**: 전체 표본의 토큰 분포·GT는 저장되어 있지 않아서 공간적 이동 분석은 대표
-5장에 한정된다. 최댓값 위치 변경률만 100장이다. 표본 ID와 정답 label이 없는 기존
-아카이브로 공격 성공 여부나 인과적 정보 전달 경로를 해석하지 않는다. 별도 `.log` 파일은
-생성하지 않는다.
+### 맵과 수치의 정의
+
+맵은 **CLS query가 각 patch key에 주는 attention**이다. softmax 이후 헤드 평균을 사용하고,
+CLS key의 질량을 제거하거나 patch 부분을 재정규화하지 않는다. 맵에서 CLS 칸은 생략하지만
+CLS 변화량은 별도로 표시한다. 모든 공간 맵의 선형 색 범위는 공격·성공/실패·표본·레이어에 걸쳐
+동일하다. 차이 맵은 0을 중심으로 증가(빨강)와 감소(파랑)를 표시한다. 사진은 첫 행에만 있고,
+아래에는 사진을 겹치지 않은 맵을 배치한다. 청록색 테두리는 GT 토큰이다.
+
+- **TV**: CLS를 포함한 `0.5 × Σ|attack − clean|`. 맵 전체의 변화 크기.
+- **GT 증감**: coverage > 0인 토큰으로 들어가는 raw attention의 변화량 합.
+  부분적으로 변경된 토큰도 전체 토큰으로 포함한다. coverage로 가중한 값은 별도 보조 지표다.
+- **보존 확인**: GT 영역 + 나머지 patch + CLS 증감 합은 0이어야 한다(`atol=1e-4`, `rtol=0`).
+- 집단 그림은 중앙값/IQR이며 신뢰구간이나 유의성 검정이 아니다. 빈 성공/실패 집단도 n=0으로 표시한다.
+
+### 특이 레이어를 발견한 뒤 확인하는 방법
+
+전체 clean 정답 표본에서 TV 중앙값이 가장 큰 레이어, 이전 레이어보다 TV 중앙값이 가장 많이
+증가한 레이어, 성공/실패 GT 증감 중앙값 차이가 가장 큰 레이어를 탐색 후보로 표시한다.
+표본이 없는 집단의 비교는 생략한다. 후보마다 각 집단의 TV가 가장 큰 사례를 골라 앞뒤 레이어
+맵과 모든 헤드의 GT 증감 지도를 저장한다. 이는 탐색용 순위이며 통계적 이상 판정이나 인과 증거가 아니다.
+
+전체 레이어 맵의 기본 사례는 성공/실패별 평균 TV가 집단 중앙에 가까운 사례와 최대 사례다.
+마지막 레이어 GT 증가 없이 성공한 사례, GT가 증가했지만 실패한 사례도 있으면 추가한다.
+선정 이유는 CSV에 남기며, `--all_maps`를 붙이면 **모든 clean 정답 표본**의 전체 레이어 맵을 저장한다.
+전체 표본의 수치는 옵션과 무관하게 CSV에 저장된다.
+
+공유 PatchFool은 unbounded 픽셀 공격이고 LaVAN과 면적·최적화 예산이 다르다. 공격별 성공/실패를
+비교하며 서로의 차이를 공격 목적함수 하나의 효과로 해석하지 않는다. attention 변화와 오분류의
+연관성이 곧 원인이라는 주장은 하지 않는다. 출력 그림은 PNG만 사용하고 PDF·로그 파일은 만들지 않는다.
