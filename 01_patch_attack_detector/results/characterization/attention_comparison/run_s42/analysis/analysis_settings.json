@@ -1,9 +1,0 @@
-{
-  "run_id": "2147f488e75f459db541b79bfe274cdb",
-  "manifest_sha256": "cbb29f9c2974d3c0bdbd78b0dd96429a376c09030e5ef0d31bc0fdbb4d976263",
-  "analysis_source_sha256": "6d98894b20e490567f19c2d42a79dfe4111076ccadd028c4bce7400deae0bca4",
-  "mass_scale_percent": 76.25997924804688,
-  "delta_scale_pp": 70.12493133544922,
-  "head_scale_pp": 97.51321411132812,
-  "all_maps": false
-}

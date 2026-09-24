@@ -1,16 +1,53 @@
-# 동일 쌍의 공격 전후 attention과 성공/실패 비교
+# Attention before/after attack: success vs failure, by layer
 
-- 입력의 파일 지문, 실행 ID, 표본 순서, 예측, GT를 검증한 후 분석했습니다.
-- 성공: clean 정답 → 공격 후 오답. 실패: clean 정답 → 공격 후 정답. 원래 오답은 집단 비교에서 제외합니다.
-- CLS query의 softmax attention이며 CLS key를 보존합니다. 헤드 평균 후 patch 격자에 표시합니다.
-- GT는 실제 변경 픽셀에서 계산합니다. clean에도 같은 GT를 적용합니다. 청록색은 변경 토큰입니다.
-- GT 영역 + 나머지 patch + CLS 변화량 합은 0입니다. 부분 공격 토큰은 토큰 전체를 포함합니다.
-- coverage 가중치는 별도 보조값입니다. 픽셀별 attention이라는 의미는 아닙니다.
-- maps: 선택 사례의 모든 레이어, layer_details: 후보 레이어와 앞뒤 맵 및 헤드별 증감.
-- 모든 공간 맵은 동일한 선형 색 범위입니다. 차이 맵은 0 중심 대칭 범위입니다. 사진 중첩은 없습니다.
-- 집단 비교 그림은 중앙값/IQR입니다. 신뢰구간이나 유의성 검정이 아닙니다.
-- layer_candidates는 변화량 최대/급증/성공실패 GT 차이 최대에 따른 탐색 후보입니다. 이상 판정이 아닙니다.
-- selected_examples에 사례 선정 이유를 기록했습니다. 전체 표본 수치는 CSV에 있습니다.
-- 모든 레이어를 평균한 값은 사례 선택에만 사용하며, 레이어별 분석을 대체하지 않습니다.
-- CSV 값은 0~1 단위 attention 또는 그 차이이며 그림에는 100을 곱합니다.
-- 과거 독립 실행 결과는 사용하지 않습니다. 원본 데이터, PNG, CSV를 보존합니다.
+- Folders are organized `<attack>/attack_success/` (attack succeeded, image misclassified) and `<attack>/attack_fail/` (attack failed, image still correct). These names describe the ATTACK's outcome, not a pipeline failure.
+- Maps show CLS-query attention to each patch key, head-averaged, CLS key mass kept (not renormalized away). The teal box marks GT patches (any pixel actually changed).
+- Sequential color (light blue -> dark navy) covers raw attention; it uses a power-law scale and a 99.5th-percentile cap computed only over the blocks actually shown (not all 12 — mixing near-zero early blocks with the huge late-block swings would wash out exactly the blocks being displayed). Values above the cap are drawn at the top color, marked by the colorbar's arrow, not silently redrawn.
+- Diverging color (blue negative / red positive) covers attack-minus-clean change, centered on zero.
+- GT Δ: attention change summed over GT patches (raw, not renormalized). TV: 0.5 × sum(|attack - clean|) over all 197 tokens including CLS.
+- The layer table uses the *median* over all clean-correct samples; flagged blocks (⚠) are exploratory candidates by descriptive statistics, not a significance test or causal claim.
+- No CSVs here by design — the table above is the numeric result worth keeping. Per-sample/per-head raw numbers are recomputable from `../data/` with `compute_metrics()` in this folder's script if ever needed.
+
+## patchfool
+
+- Attack succeeded (misclassified): n=82. Attack failed (still correct): n=5. (Clean-incorrect samples are excluded from this comparison.)
+- Flagged blocks (largest median TV / largest TV jump / largest success-vs-fail GT gap): 11, 12.
+- `patchfool/layer_comparison.png`: population median + IQR by block.
+- `patchfool/attack_success/`, `patchfool/attack_fail/`: one representative example each, shown only at the flagged blocks above.
+
+| Block | TV (median) | GT Δ success (pp) | GT Δ fail (pp) | flagged |
+|---|---|---|---|---|
+| 1 | 0.21 | -0.19 | -0.29 |  |
+| 2 | 0.61 | +0.48 | +0.20 |  |
+| 3 | 0.56 | +0.45 | +0.36 |  |
+| 4 | 0.92 | +0.60 | +0.33 |  |
+| 5 | 1.14 | +0.28 | +0.19 |  |
+| 6 | 2.92 | -0.77 | -1.15 |  |
+| 7 | 6.96 | -4.44 | -4.78 |  |
+| 8 | 14.52 | -10.69 | -12.20 |  |
+| 9 | 18.63 | -11.31 | -16.11 |  |
+| 10 | 16.72 | +1.23 | -9.53 |  |
+| 11 | 29.69 | +23.67 | -6.93 | ⚠ |
+| 12 | 40.26 | +35.79 | +25.36 | ⚠ |
+
+## lavan
+
+- Attack succeeded (misclassified): n=55. Attack failed (still correct): n=32. (Clean-incorrect samples are excluded from this comparison.)
+- Flagged blocks (largest median TV / largest TV jump / largest success-vs-fail GT gap): 11, 12.
+- `lavan/layer_comparison.png`: population median + IQR by block.
+- `lavan/attack_success/`, `lavan/attack_fail/`: one representative example each, shown only at the flagged blocks above.
+
+| Block | TV (median) | GT Δ success (pp) | GT Δ fail (pp) | flagged |
+|---|---|---|---|---|
+| 1 | 0.07 | -0.07 | -0.06 |  |
+| 2 | 0.17 | -0.13 | -0.14 |  |
+| 3 | 0.39 | +0.29 | +0.19 |  |
+| 4 | 1.02 | +1.03 | +0.53 |  |
+| 5 | 1.14 | +0.96 | +0.66 |  |
+| 6 | 2.21 | +1.47 | +1.01 |  |
+| 7 | 2.78 | +1.22 | +0.69 |  |
+| 8 | 4.49 | +1.65 | +0.97 |  |
+| 9 | 6.78 | +4.26 | +2.92 |  |
+| 10 | 12.19 | +9.09 | +7.32 |  |
+| 11 | 25.63 | +17.27 | +17.47 | ⚠ |
+| 12 | 31.55 | +14.62 | +21.33 | ⚠ |
