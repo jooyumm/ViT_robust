@@ -284,11 +284,15 @@ def layer_table(n_layers, median_tv, median_gt_delta, flagged):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run', type=Path, required=True, help='manifest.json이 있는 동일 실행 폴더')
-    parser.add_argument('--output', type=Path, help='기본값: 실행 폴더 안 analysis. 기존 폴더 덮어쓰기 금지')
+    parser.add_argument('--output', type=Path,
+                        help='기본값: results/characterization/ (실행이 바뀌어도 같은 자리에 최신 결과만 남김)')
     args = parser.parse_args()
     manifest, data = load_paired_run(args.run)
-    output = args.output or args.run / 'analysis'
-    output.mkdir(parents=True, exist_ok=False)
+    # attention_comparison/<run>/analysis/ 처럼 실행마다 폴더를 새로 만들면 결과 폴더가
+    # 계속 깊어지고 늘어난다 -- 사람이 보는 요약은 results/characterization/<attack>/ 하나에
+    # 모으고, 실행별 원본(재현에 필요한 manifest/data)만 run 폴더에 남긴다.
+    output = args.output or args.run.resolve().parent.parent
+    output.mkdir(parents=True, exist_ok=True)
     n_layers = manifest['n_layers']
 
     results = {}
@@ -300,7 +304,7 @@ def main():
     for attack, metrics in results.items():
         outcome = data[attack + '__outcome']
         attack_dir = output / attack
-        attack_dir.mkdir()
+        attack_dir.mkdir(exist_ok=True)
         draw_layer_comparison(attack, metrics, outcome, attack_dir / 'layer_comparison.png')
 
         median_tv, median_gt_delta, flagged = flag_layers(metrics, outcome)
@@ -326,14 +330,14 @@ def main():
         for status, (code, status_label) in OUTCOMES.items():
             n = int((outcome == code).sum())
             counts[status] = n
-            status_dir = attack_dir / status
-            status_dir.mkdir()
             sample_i = pick_representative(metrics, outcome, code)
             if sample_i is None:
                 continue
             sample_id = int(data['sample_index'][sample_i])
+            # 폴더로 나누지 않고 파일명에 상태를 넣는다 -- attack_success/attack_fail
+            # 폴더 두 개보다, 공격당 폴더 하나에 파일 몇 개가 있는 게 훑어보기 쉽다.
             draw_maps(data, manifest, attack, sample_i, metrics, example_layers, scales,
-                      status_label, status_dir / f'example_sample{sample_id}.png')
+                      status_label, attack_dir / f'example_{status}_sample{sample_id}.png')
 
         readme_sections.append(
             f'## {attack}\n\n'
@@ -343,32 +347,37 @@ def main():
             f'- Flagged blocks (largest median TV / largest TV jump / largest '
             f'success-vs-fail GT gap): {", ".join(str(i + 1) for i in flagged) or "none"}.\n'
             f'- `{attack}/layer_comparison.png`: population median + IQR by block.\n'
-            f'- `{attack}/attack_success/`, `{attack}/attack_fail/`: one representative example each, '
+            f'- `{attack}/example_attack_success_sample<id>.png`, '
+            f'`{attack}/example_attack_fail_sample<id>.png`: one representative example each, '
             f'clean vs. attack vs. difference at every block (1-{n_layers}) — the flagged blocks above '
             f'are where the population-level chart says to look closest, not the only blocks shown.\n\n'
             f'{layer_table(n_layers, median_tv, median_gt_delta, flagged)}\n')
 
     (output / 'README.md').write_text(
         '# Attention before/after attack: success vs failure, by layer\n\n'
-        '- Folders are organized `<attack>/attack_success/` (attack succeeded, image '
-        'misclassified) and `<attack>/attack_fail/` (attack failed, image still correct). '
-        'These names describe the ATTACK\'s outcome, not a pipeline failure.\n'
+        f'Generated from run `{args.run.resolve()}` — its `manifest.json` and `data/` hold the '
+        'reproducible source (seeds, hashes, raw images/attention); re-running this script only '
+        'overwrites the files below, not that run.\n\n'
+        '- One folder per attack (`patchfool/`, `lavan/`), no outcome subfolders — the outcome is '
+        'in the filename instead: `example_attack_success_*` (attack succeeded, image '
+        'misclassified) vs. `example_attack_fail_*` (attack failed, image still correct). These '
+        'names describe the ATTACK\'s outcome, not a pipeline failure.\n'
         '- Maps show CLS-query attention to each patch key, head-averaged, CLS key mass kept '
         '(not renormalized away). The teal box marks GT patches (any pixel actually changed).\n'
-        '- Sequential color (light blue -> dark navy) covers raw attention; it uses a '
-        'power-law scale and a 99.5th-percentile cap computed only over the blocks actually '
-        'shown (not all 12 — mixing near-zero early blocks with the huge late-block swings '
-        'would wash out exactly the blocks being displayed). Values above the cap are drawn '
-        'at the top color, marked by the colorbar\'s arrow, not silently redrawn.\n'
-        '- Diverging color (blue negative / red positive) covers attack-minus-clean change, '
-        'centered on zero.\n'
+        '- Sequential color (light blue -> dark navy) covers raw attention; diverging color '
+        '(blue negative / red positive) covers attack-minus-clean change, centered on zero. Both '
+        'use a 99.5th-percentile cap (not the true max) shared across every block of a given '
+        'attack, so a single extreme sample or patch can\'t blank out the rest, while the real '
+        'block-to-block story (near-zero early on, then increasingly concentrated) still shows. '
+        'Values above the cap are drawn at the top color, marked by the colorbar\'s arrow, not '
+        'silently redrawn.\n'
         '- GT Δ: attention change summed over GT patches (raw, not renormalized). '
         'TV: 0.5 × sum(|attack - clean|) over all 197 tokens including CLS.\n'
         '- The layer table uses the *median* over all clean-correct samples; flagged blocks '
         '(⚠) are exploratory candidates by descriptive statistics, not a significance test '
         'or causal claim.\n'
         '- No CSVs here by design — the table above is the numeric result worth keeping. '
-        'Per-sample/per-head raw numbers are recomputable from `../data/` with '
+        f'Per-sample/per-head raw numbers are recomputable from `{args.run.resolve()}/data/` with '
         '`compute_metrics()` in this folder\'s script if ever needed.\n\n'
         + '\n'.join(readme_sections))
     print(f'분석 완료: {output}')

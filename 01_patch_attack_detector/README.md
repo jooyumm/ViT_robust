@@ -81,29 +81,30 @@ python 01_patch_attack_detector/experiments/characterization/02_compare_attentio
 ```
 
 추출기의 `--output`을 생략하면 시각과 실행 ID로 새 폴더를 만든다. 재시작 이어받기는 지원하지 않으며,
-중단된 실행에는 `complete=false`가 남는다. 분석도 기본 `analysis/`가 이미 있으면 덮어쓰지 않는다.
-재분석은 `--output .../analysis_v2`처럼 새 폴더를 지정한다. 분석에는 GPU가 필요 없다.
+중단된 실행에는 `complete=false`가 남는다. 분석에는 GPU가 필요 없다.
 
-결과는 한 실행 폴더 안에 모인다.
+추출 결과(재현에 필요한 원본)와 분석 결과(사람이 보는 요약)는 폴더를 분리한다 — 실행마다
+`analysis/` 폴더가 새로 쌓이면 결과 폴더가 계속 깊어지기 때문에, 분석 출력은 실행 폴더 밖의
+`results/characterization/`에 공격별로 하나씩만 모은다(재실행하면 그 자리를 덮어쓴다).
 
 ```text
-attention_comparison/<run>/
-  manifest.json                 실행 설정, 표본 ID/경로, 모델·코드·청크 지문, 완료 여부
-  data/chunk_*.npz              같은 실행의 전체 이미지·logits·예측·헤드별 attention·GT
-  analysis/
-    README.md                    결과 해석 기준 + 공격별 레이어 요약표(마크다운, CSV 없음)
-    <attack>/                    patchfool/, lavan/ 각각
-      layer_comparison.png       12개 레이어의 attack_success/attack_fail 중앙값과 IQR
-      attack_success/            공격 성공(오분류)한 대표 사례 1장 — 12개 레이어 전부
-      attack_fail/               공격 실패(여전히 정답)한 대표 사례 1장 — 12개 레이어 전부
+results/characterization/
+  attention_comparison/<run>/
+    manifest.json                실행 설정, 표본 ID/경로, 모델·코드·청크 지문, 완료 여부
+    data/chunk_*.npz             같은 실행의 전체 이미지·logits·예측·헤드별 attention·GT
+  README.md                      결과 해석 기준 + 공격별 레이어 요약표(마크다운, CSV 없음)
+  <attack>/                      patchfool/, lavan/ 각각 — 하위 폴더 없이 파일 몇 개뿐
+    layer_comparison.png         12개 레이어의 attack_success/attack_fail 중앙값과 IQR
+    example_attack_success_sample<id>.png  공격 성공(오분류) 대표 사례 1장 — 12개 레이어 전부
+    example_attack_fail_sample<id>.png     공격 실패(여전히 정답) 대표 사례 1장 — 12개 레이어 전부
 ```
 
-폴더/파일 이름을 `attack_success`/`attack_fail`로 명시한 이유: "success/failure"만 쓰면
-공격이 성공했다는 건지 분류가 실패했다는 건지 헷갈린다는 지적을 반영해, 무엇이 성공·실패했는지
-이름 자체에 남겼다. 대표 사례 그림도 CSV 여러 개 대신 딱 1장씩만 남기고, 그 안에서도 전체
-12레이어가 아니라 아래 "특이 레이어" 후보로 뽑힌 레이어만 보여준다 — 결과 폴더가 한눈에
-훑어볼 수 있는 양을 넘지 않게 하기 위해서다. 전체 표본·레이어·헤드의 원값이 다시 필요하면
-CSV로 미리 뽑아두는 대신, `data/`와 이 스크립트의 `compute_metrics()`로 그때그때 다시 계산한다.
+파일 이름에 `attack_success`/`attack_fail`을 넣은 이유: "success/failure"만 쓰면 공격이
+성공했다는 건지 분류가 실패했다는 건지 헷갈린다는 지적을 반영해, 무엇이 성공·실패했는지 이름
+자체에 남겼다 — 폴더를 따로 나누지 않고 파일명만으로 구분되게 했다. 대표 사례 그림도 공격당
+2장(성공/실패 각 1장)만 남기고 CSV는 만들지 않는다. 전체 표본·레이어·헤드의 원값이 다시
+필요하면 `attention_comparison/<run>/data/`와 이 스크립트의 `compute_metrics()`로 그때그때
+다시 계산한다.
 
 ### 맵과 수치의 정의
 
@@ -126,10 +127,10 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 ### 특이 레이어를 발견한 뒤 확인하는 방법
 
 전체 clean 정답 표본에서 TV 중앙값이 가장 큰 레이어, 이전 레이어보다 TV 중앙값이 가장 많이
-증가한 레이어, 성공/실패 GT 증감 중앙값 차이가 가장 큰 레이어를 탐색 후보로 표시한다(`analysis/README.md`의
+증가한 레이어, 성공/실패 GT 증감 중앙값 차이가 가장 큰 레이어를 탐색 후보로 표시한다(`results/characterization/README.md`의
 표에 ⚠로 표시). 표본이 없는 집단의 비교는 생략한다. 이는 탐색용 순위이며 통계적 이상 판정이나
-인과 증거가 아니다. `attack_success/`, `attack_fail/`의 대표 사례는 각 집단의 평균 TV가
-중앙값에 가장 가까운 표본이며, 12개 레이어 전부에서 clean/attack/차이 맵을 보여준다 —
+인과 증거가 아니다. `example_attack_success_*`, `example_attack_fail_*`의 대표 사례는 각 집단의
+평균 TV가 중앙값에 가장 가까운 표본이며, 12개 레이어 전부에서 clean/attack/차이 맵을 보여준다 —
 표시된 ⚠ 레이어는 어디부터 눈여겨봐야 하는지 알려주는 표시일 뿐, 다른 레이어를 생략하지 않는다.
 
 공유 PatchFool은 unbounded 픽셀 공격이고 LaVAN과 면적·최적화 예산이 다르다. 공격별 성공/실패를
