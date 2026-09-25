@@ -29,9 +29,9 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
 # 방어 관점에서 공격 성공=critical, 실패=good인 상태 색 사용 -- 이름의 의미와 색이 서로 확인해준다.
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
 # 양 끝이 검정으로 가면 원본/공격/차이가 다 어두워져서 구분이 안 된다 -- 끝 색을 원색으로 둔다.
-# raw attention: 흰색 -> 순수 파랑. 차이: 감소=순수 초록, 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
+# raw attention: 흰색 -> 순수 파랑. 차이: 감소=순수 초록, 0=검정(0인 곳이 눈에 띄지 않게), 증가(attention이 더 몰림)=순수 빨강.
 SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', ['#ffffff', '#0000ff'])
-DIVERGING = LinearSegmentedColormap.from_list('green_white_red', ['#00ff00', '#ffffff', '#ff0000'])
+DIVERGING = LinearSegmentedColormap.from_list('green_white_red', ['#00ff00', '#000000', '#ff0000'])
 METRICS = {'tv': 'Total variation', 'gt_delta': 'Attention change in GT region (pp)'}
 
 
@@ -169,20 +169,16 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
 
     clean_img = np.clip((data['clean__images'][sample_i] * std + mean).transpose(1, 2, 0), 0, 1)
     attack_img = np.clip((data[attack + '__images'][sample_i] * std + mean).transpose(1, 2, 0), 0, 1)
-    coverage_pct = coverage.reshape(side, side) * 100
-
-    top_panels = [(0, clean_img, 'Clean', False, CLEAN_BOX_COLOR), (1, attack_img, attack, False, ATTACK_BOX_COLOR),
-                 (2, coverage_pct, 'GT: % of patch changed', True, ATTACK_BOX_COLOR)]
-    for column, image, title, is_coverage, box_color in top_panels:
+    top_panels = [(0, clean_img, 'Clean', CLEAN_BOX_COLOR), (1, attack_img, attack, ATTACK_BOX_COLOR)]
+    for column, image, title, box_color in top_panels:
         axis = axes[0, column]
-        if is_coverage:
-            axis.imshow(image, cmap=SEQUENTIAL, vmin=0, vmax=100, extent=extent)
-        else:
-            axis.imshow(image, extent=extent)
+        axis.imshow(image, extent=extent)
         draw_gt(axis, coverage, side, box_color)
         axis.set_title(title)
         axis.set_xticks([])
         axis.set_yticks([])
+    # 차이 열의 첫 행은 비워 둔다(칸은 남겨야 컬러바가 열 전체에서 같은 폭을 빌려 행이 어긋나지 않는다).
+    axes[0, 2].set_axis_off()
 
     mass_max, delta_max = scales
     mass_norm = PowerNorm(gamma=.45, vmin=0, vmax=mass_max)
@@ -370,8 +366,8 @@ def main():
         'ground_truth/draw_boxes.py\'s colors, reused directly: blue on Clean panels, yellow on '
         'attacked/difference panels.\n'
         '- Raw attention: white -> pure blue. Attack-minus-clean: pure green (attention lost) -> '
-        'white (no change) -> pure red (attention concentrated more). Ends are pure colors, not '
-        'dark/black, so panels stay distinguishable at the extremes. Both '
+        'black (no change) -> pure red (attention concentrated more). Ends are pure colors so panels stay '
+        'distinguishable at the extremes; zero is black so untouched cells recede. Both '
         'use a 99.5th-percentile cap (not the true max) shared across every block of a given '
         'attack, so a single extreme sample or patch can\'t blank out the rest, while the real '
         'block-to-block story (near-zero early on, then increasingly concentrated) still shows. '
