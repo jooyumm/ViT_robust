@@ -304,17 +304,22 @@ def main():
         draw_layer_comparison(attack, metrics, outcome, attack_dir / 'layer_comparison.png')
 
         median_tv, median_gt_delta, flagged = flag_layers(metrics, outcome)
-        example_layers = flagged or [n_layers - 1]
+        # 레이어 전부(clean 대비 attack이 레이어를 타고 어떻게 바뀌는지 그 자체가 보고 싶은
+        # 것)를 보여준다 -- flag_layers는 README 표에 표시할 후보를 고르는 용도로만 쓴다.
+        example_layers = list(range(n_layers))
 
-        # 표본별 자동 확대는 금지하되(같은 공격의 모든 clean 정답 표본에서 공통 범위를 잡는다),
-        # 12개 레이어를 합쳐서 스케일을 잡으면 초반 레이어(거의 0)에 눌려 정작 그리는 레이어의
-        # 색이 다 뭉개진다 -- 실제로 보여주는 레이어에서만 범위를 계산한다.
+        # 표본별 자동 확대는 금지한다 -- 같은 공격의 모든 clean 정답 표본에서 공통 범위를 잡는다.
+        # 초반 레이어는 진짜로 거의 변화가 없고 후반 레이어에서 커지는 것 자체가 보여주려는
+        # 내용이라, 레이어 전체를 합쳐 하나의 범위로 잡는다 -- percentile을 쓰는 이유는
+        # 극단적인 표본 하나가 전체 스케일을 지배하지 않게 하기 위해서일 뿐, 레이어 간 진짜
+        # 차이(초반 옅음 -> 후반 진함)는 그대로 드러난다.
+        # 맵에 그리는 값은 전부 *100(퍼센트 포인트)이라 스케일도 같은 단위로 잡아야 한다 --
+        # 여기서 *100을 빼먹으면 vmax가 100배 작아져서 거의 모든 patch가 최고색으로 잘린다.
         valid = outcome >= 0
-        shown_clean = metrics['clean'][valid][:, example_layers, 1:]
-        shown_attacked = metrics['attacked'][valid][:, example_layers, 1:]
-        shown_delta = metrics['delta'][valid][:, example_layers, 1:]
-        mass_max = robust_scale(np.concatenate([shown_clean, shown_attacked]), percentile=99.5)
-        delta_max = robust_scale(shown_delta, percentile=99.5)
+        mass_max = robust_scale(100 * np.concatenate([metrics['clean'][valid, :, 1:],
+                                                        metrics['attacked'][valid, :, 1:]]),
+                                percentile=99.5)
+        delta_max = robust_scale(100 * metrics['delta'][valid, :, 1:], percentile=99.5)
         scales = max(mass_max, 1e-8), max(delta_max, 1e-8)
 
         counts = {}
@@ -339,7 +344,8 @@ def main():
             f'success-vs-fail GT gap): {", ".join(str(i + 1) for i in flagged) or "none"}.\n'
             f'- `{attack}/layer_comparison.png`: population median + IQR by block.\n'
             f'- `{attack}/attack_success/`, `{attack}/attack_fail/`: one representative example each, '
-            f'shown only at the flagged blocks above.\n\n'
+            f'clean vs. attack vs. difference at every block (1-{n_layers}) — the flagged blocks above '
+            f'are where the population-level chart says to look closest, not the only blocks shown.\n\n'
             f'{layer_table(n_layers, median_tv, median_gt_delta, flagged)}\n')
 
     (output / 'README.md').write_text(

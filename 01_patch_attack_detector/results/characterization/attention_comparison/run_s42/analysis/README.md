@@ -13,7 +13,7 @@
 - Attack succeeded (misclassified): n=82. Attack failed (still correct): n=5. (Clean-incorrect samples are excluded from this comparison.)
 - Flagged blocks (largest median TV / largest TV jump / largest success-vs-fail GT gap): 11, 12.
 - `patchfool/layer_comparison.png`: population median + IQR by block.
-- `patchfool/attack_success/`, `patchfool/attack_fail/`: one representative example each, shown only at the flagged blocks above.
+- `patchfool/attack_success/`, `patchfool/attack_fail/`: one representative example each, clean vs. attack vs. difference at every block (1-12) — the flagged blocks above are where the population-level chart says to look closest, not the only blocks shown.
 
 | Block | TV (median) | GT Δ success (pp) | GT Δ fail (pp) | flagged |
 |---|---|---|---|---|
@@ -35,7 +35,7 @@
 - Attack succeeded (misclassified): n=55. Attack failed (still correct): n=32. (Clean-incorrect samples are excluded from this comparison.)
 - Flagged blocks (largest median TV / largest TV jump / largest success-vs-fail GT gap): 11, 12.
 - `lavan/layer_comparison.png`: population median + IQR by block.
-- `lavan/attack_success/`, `lavan/attack_fail/`: one representative example each, shown only at the flagged blocks above.
+- `lavan/attack_success/`, `lavan/attack_fail/`: one representative example each, clean vs. attack vs. difference at every block (1-12) — the flagged blocks above are where the population-level chart says to look closest, not the only blocks shown.
 
 | Block | TV (median) | GT Δ success (pp) | GT Δ fail (pp) | flagged |
 |---|---|---|---|---|

@@ -94,8 +94,8 @@ attention_comparison/<run>/
     README.md                    결과 해석 기준 + 공격별 레이어 요약표(마크다운, CSV 없음)
     <attack>/                    patchfool/, lavan/ 각각
       layer_comparison.png       12개 레이어의 attack_success/attack_fail 중앙값과 IQR
-      attack_success/            공격 성공(오분류)한 대표 사례 1장 — 특이 레이어만
-      attack_fail/               공격 실패(여전히 정답)한 대표 사례 1장 — 특이 레이어만
+      attack_success/            공격 성공(오분류)한 대표 사례 1장 — 12개 레이어 전부
+      attack_fail/               공격 실패(여전히 정답)한 대표 사례 1장 — 12개 레이어 전부
 ```
 
 폴더/파일 이름을 `attack_success`/`attack_fail`로 명시한 이유: "success/failure"만 쓰면
@@ -129,7 +129,8 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 증가한 레이어, 성공/실패 GT 증감 중앙값 차이가 가장 큰 레이어를 탐색 후보로 표시한다(`analysis/README.md`의
 표에 ⚠로 표시). 표본이 없는 집단의 비교는 생략한다. 이는 탐색용 순위이며 통계적 이상 판정이나
 인과 증거가 아니다. `attack_success/`, `attack_fail/`의 대표 사례는 각 집단의 평균 TV가
-중앙값에 가장 가까운 표본이며, 이 후보 레이어에서만 clean/attack/차이 맵을 보여준다.
+중앙값에 가장 가까운 표본이며, 12개 레이어 전부에서 clean/attack/차이 맵을 보여준다 —
+표시된 ⚠ 레이어는 어디부터 눈여겨봐야 하는지 알려주는 표시일 뿐, 다른 레이어를 생략하지 않는다.
 
 공유 PatchFool은 unbounded 픽셀 공격이고 LaVAN과 면적·최적화 예산이 다르다. 공격별 성공/실패를
 비교하며 서로의 차이를 공격 목적함수 하나의 효과로 해석하지 않는다. attention 변화와 오분류의
