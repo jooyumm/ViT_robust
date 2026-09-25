@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, PowerNorm, TwoSlopeNorm
+from matplotlib.colors import LinearSegmentedColormap, Normalize, PowerNorm
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / 'ground_truth'))   # for `import draw_boxes`
@@ -29,9 +29,30 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
 # 방어 관점에서 공격 성공=critical, 실패=good인 상태 색 사용 -- 이름의 의미와 색이 서로 확인해준다.
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
 # 양 끝이 검정으로 가면 원본/공격/차이가 다 어두워져서 구분이 안 된다 -- 끝 색을 원색으로 둔다.
-# raw attention: 흰색 -> 순수 파랑. 차이: 감소=순수 초록, 0=검정(0인 곳이 눈에 띄지 않게), 증가(attention이 더 몰림)=순수 빨강.
+# raw attention: 흰색 -> 순수 파랑. 차이: 감소=연초록->초록, 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
 SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', ['#ffffff', '#0000ff'])
-DIVERGING = LinearSegmentedColormap.from_list('green_white_red', ['#00ff00', '#000000', '#ff0000'])
+# 0은 흰색. 흰색에서 바로 연한 초록/연한 빨강으로 건너뛴 뒤 원색으로 진해진다 -- 선형으로
+# 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다.
+DIVERGING = LinearSegmentedColormap.from_list('green_white_red', [
+    (0.0, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (1.0, '#ff0000')])
+
+
+class SignedPowerNorm(Normalize):
+    """0을 중심으로 부호를 유지한 채 |값|^gamma로 펼친다(gamma<1이면 작은 변화도 흰색에서
+    확실히 떨어진다). 컬러바가 눈금을 되돌릴 수 있도록 inverse를 제공한다."""
+
+    def __init__(self, vmax, gamma=.5):
+        super().__init__(vmin=-vmax, vmax=vmax, clip=True)
+        self.gamma = gamma
+
+    def __call__(self, value, clip=None):
+        v = np.ma.asarray(value, dtype=float)
+        scaled = np.sign(v) * (np.clip(np.abs(v) / self.vmax, 0, 1) ** self.gamma)
+        return np.ma.masked_array(.5 + .5 * scaled, mask=np.ma.getmask(v))
+
+    def inverse(self, value):
+        s = 2 * np.asarray(value, dtype=float) - 1
+        return np.sign(s) * (np.abs(s) ** (1 / self.gamma)) * self.vmax
 METRICS = {'tv': 'Total variation', 'gt_delta': 'Attention change in GT region (pp)'}
 
 
@@ -182,7 +203,7 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
 
     mass_max, delta_max = scales
     mass_norm = PowerNorm(gamma=.45, vmin=0, vmax=mass_max)
-    delta_norm = TwoSlopeNorm(vmin=-delta_max, vcenter=0, vmax=delta_max)
+    delta_norm = SignedPowerNorm(delta_max)
     column_image = {}
     for row, layer_i in enumerate(layers, 1):
         panels = [('clean', 'Clean'), ('attacked', attack), ('delta', '(Attack − clean)')]
@@ -366,8 +387,8 @@ def main():
         'ground_truth/draw_boxes.py\'s colors, reused directly: blue on Clean panels, yellow on '
         'attacked/difference panels.\n'
         '- Raw attention: white -> pure blue. Attack-minus-clean: pure green (attention lost) -> '
-        'black (no change) -> pure red (attention concentrated more). Ends are pure colors so panels stay '
-        'distinguishable at the extremes; zero is black so untouched cells recede. Both '
+        'white (no change) -> pure red (attention concentrated more). Ends are pure colors so panels stay '
+        'distinguishable at the extremes; small changes are stretched (signed power scale) so they stay visibly off-white. Both '
         'use a 99.5th-percentile cap (not the true max) shared across every block of a given '
         'attack, so a single extreme sample or patch can\'t blank out the rest, while the real '
         'block-to-block story (near-zero early on, then increasingly concentrated) still shows. '
