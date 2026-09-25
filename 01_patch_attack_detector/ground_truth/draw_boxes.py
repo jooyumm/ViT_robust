@@ -31,12 +31,17 @@ def _draw_patch_grid(ax, ppl=PPL, patch_size=PATCH_SIZE):
         ax.axvline(i * patch_size, color='white', lw=0.3, alpha=0.4)
 
 
-def _draw_patch_box(ax, patch_idx, color, label=None, ppl=PPL, patch_size=PATCH_SIZE, lw=2.0):
+def draw_patch_box(ax, patch_idx, color, label=None, ppl=PPL, patch_size=PATCH_SIZE, lw=2.0, offset=0.0):
+    """patch_idx 위치에 박스 하나. 실제 사진(패널 원점이 0, patch_size=16 등 픽셀 단위)은
+    offset=0(기본값)을 쓰고, imshow 기본 extent로 그린 격자(칸 중심이 정수 좌표, patch_size=1)
+    처럼 반 칸 보정이 필요하면 offset=-.5를 넘긴다 -- 좌표계만 다를 뿐 같은 박스 하나를
+    그리는 로직이라 여기서 공유한다(01_patch_attack_detector/experiments/characterization의
+    attention map에서도 그대로 가져다 쓴다)."""
     r, c = patch_idx // ppl, patch_idx % ppl
-    ax.add_patch(Rectangle((c * patch_size, r * patch_size), patch_size, patch_size,
+    ax.add_patch(Rectangle((c * patch_size + offset, r * patch_size + offset), patch_size, patch_size,
                             fill=False, edgecolor=color, lw=lw))
     if label:
-        ax.text(c * patch_size + 1, r * patch_size + patch_size - 2, label,
+        ax.text(c * patch_size + offset + 1, r * patch_size + offset + patch_size - 2, label,
                 color=color, fontsize=7, fontweight='bold', va='bottom')
 
 
@@ -85,7 +90,7 @@ def plot_gt_locations(clean_img, adv_img, gt_cov, group, out_path, label=None, g
             if i == 2:   # diff: patch별 상세(경계 + 겹침 %)
                 for p, frac in gt_patches:
                     patch_label = f'{frac:.0%}' if show_pct else None
-                    _draw_patch_box(ax, p, box_color, label=patch_label)
+                    draw_patch_box(ax, p, box_color, label=patch_label)
             else:        # clean/adv: 감싸는 사각형 하나만
                 _draw_bbox(ax, gt_patches, box_color)
         ax.set_xticks([]); ax.set_yticks([])

@@ -8,14 +8,18 @@
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, PowerNorm, TwoSlopeNorm
-from matplotlib.patches import Rectangle
+from matplotlib.colors import PowerNorm, TwoSlopeNorm
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parents[1] / 'ground_truth'))   # for `import draw_boxes`
+from draw_boxes import draw_patch_box, ATTACK_BOX_COLOR   # noqa: E402 -- GT 박스는 여기서 그대로 가져다 쓴다
 
 MASS_ATOL = 1e-4
 # 결과 이름 자체가 "무엇이 성공/실패했는지"를 말하게 한다 -- "failure"만 보면 공격이
@@ -24,12 +28,11 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
             'attack_fail': (0, 'Attack failed (still correct)')}
 # 방어 관점에서 공격 성공=critical, 실패=good인 상태 색 사용 -- 이름의 의미와 색이 서로 확인해준다.
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
-GT_COLOR = '#15c7c4'
-# 순차 색상: 옅은 하늘색(0에 가까움, 흰 배경과도 검은 셀과도 확실히 구분) -> 짙은 남색(최댓값).
-# 기존 magma+선형 스케일은 0에 가까운 값이 전부 거의 검게 뭉개져서 비교가 안 됐다.
-SEQUENTIAL_BLUE = LinearSegmentedColormap.from_list(
-    'seq_blue', ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#1c5cab', '#0d366b'])
-DIVERGING = 'RdBu_r'
+# 히트맵에는 파란색을 쓰지 않는다(발산 색이 GT 박스의 노랑과 헷갈리지 않게). 순차 색은
+# ColorBrewer 'Reds'(옅은 분홍 -> 짙은 빨강), 발산 색은 'PuOr'(보라<->주황, 파랑 없는
+# 발산 팔레트) -- 둘 다 matplotlib 내장, 색맹 대비까지 이미 검증된 표준 팔레트다.
+SEQUENTIAL = plt.get_cmap('Reds')
+DIVERGING = 'PuOr_r'
 METRICS = {'tv': 'Total variation', 'gt_delta': 'Attention change in GT region (pp)'}
 
 
@@ -134,11 +137,11 @@ def save_figure(figure, path):
 
 
 def draw_gt(axis, coverage, side):
-    """부분적으로라도 변경된 토큰에 테두리를 표시한다."""
+    """부분적으로라도 변경된 토큰에 테두리를 표시한다 -- ground_truth/draw_boxes.py의
+    draw_patch_box를 그대로 쓴다(색도 거기 정의된 ATTACK_BOX_COLOR로 통일). 이 맵은
+    imshow 기본 extent(칸 중심이 정수 좌표)라 patch_size=1, offset=-.5로 반 칸 보정한다."""
     for patch_i in np.flatnonzero(coverage > 0):
-        row, column = divmod(int(patch_i), side)
-        axis.add_patch(Rectangle((column - .5, row - .5), 1, 1,
-                                fill=False, edgecolor=GT_COLOR, linewidth=1.2))
+        draw_patch_box(axis, int(patch_i), ATTACK_BOX_COLOR, ppl=side, patch_size=1, lw=1.2, offset=-.5)
 
 
 def robust_scale(values, percentile=99):
@@ -173,7 +176,7 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
     for column, image, title, is_coverage in top_panels:
         axis = axes[0, column]
         if is_coverage:
-            axis.imshow(image, cmap=SEQUENTIAL_BLUE, vmin=0, vmax=100, extent=extent)
+            axis.imshow(image, cmap=SEQUENTIAL, vmin=0, vmax=100, extent=extent)
         else:
             axis.imshow(image, extent=extent)
         draw_gt(axis, coverage, side)
@@ -186,14 +189,14 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
     delta_norm = TwoSlopeNorm(vmin=-delta_max, vcenter=0, vmax=delta_max)
     column_image = {}
     for row, layer_i in enumerate(layers, 1):
-        panels = [('clean', 'Clean'), ('attacked', attack), ('delta', 'Attack − clean')]
+        panels = [('clean', 'Clean'), ('attacked', attack), ('delta', '(Attack − clean)')]
         for column, (key, title) in enumerate(panels):
             axis = axes[row, column]
             values = metrics[key][sample_i, layer_i, 1:].reshape(side, side) * 100
             if key == 'delta':
                 image = axis.imshow(values, cmap=DIVERGING, norm=delta_norm, interpolation='nearest')
             else:
-                image = axis.imshow(values, cmap=SEQUENTIAL_BLUE, norm=mass_norm, interpolation='nearest')
+                image = axis.imshow(values, cmap=SEQUENTIAL, norm=mass_norm, interpolation='nearest')
             column_image[column] = image
             draw_gt(axis, coverage, side)
             axis.set_title(f'L{layer_i + 1} · {title}')
@@ -337,7 +340,7 @@ def main():
             # 폴더로 나누지 않고 파일명에 상태를 넣는다 -- attack_success/attack_fail
             # 폴더 두 개보다, 공격당 폴더 하나에 파일 몇 개가 있는 게 훑어보기 쉽다.
             draw_maps(data, manifest, attack, sample_i, metrics, example_layers, scales,
-                      status_label, attack_dir / f'example_{status}_sample{sample_id}.png')
+                      status_label, attack_dir / f'ex_{status}_{sample_id}.png')
 
         readme_sections.append(
             f'## {attack}\n\n'
@@ -347,8 +350,8 @@ def main():
             f'- Flagged blocks (largest median TV / largest TV jump / largest '
             f'success-vs-fail GT gap): {", ".join(str(i + 1) for i in flagged) or "none"}.\n'
             f'- `{attack}/layer_comparison.png`: population median + IQR by block.\n'
-            f'- `{attack}/example_attack_success_sample<id>.png`, '
-            f'`{attack}/example_attack_fail_sample<id>.png`: one representative example each, '
+            f'- `{attack}/ex_attack_success_<id>.png`, '
+            f'`{attack}/ex_attack_fail_<id>.png`: one representative example each, '
             f'clean vs. attack vs. difference at every block (1-{n_layers}) — the flagged blocks above '
             f'are where the population-level chart says to look closest, not the only blocks shown.\n\n'
             f'{layer_table(n_layers, median_tv, median_gt_delta, flagged)}\n')
@@ -359,13 +362,15 @@ def main():
         'reproducible source (seeds, hashes, raw images/attention); re-running this script only '
         'overwrites the files below, not that run.\n\n'
         '- One folder per attack (`patchfool/`, `lavan/`), no outcome subfolders — the outcome is '
-        'in the filename instead: `example_attack_success_*` (attack succeeded, image '
-        'misclassified) vs. `example_attack_fail_*` (attack failed, image still correct). These '
+        'in the filename instead: `ex_attack_success_*` (attack succeeded, image '
+        'misclassified) vs. `ex_attack_fail_*` (attack failed, image still correct). These '
         'names describe the ATTACK\'s outcome, not a pipeline failure.\n'
         '- Maps show CLS-query attention to each patch key, head-averaged, CLS key mass kept '
-        '(not renormalized away). The teal box marks GT patches (any pixel actually changed).\n'
-        '- Sequential color (light blue -> dark navy) covers raw attention; diverging color '
-        '(blue negative / red positive) covers attack-minus-clean change, centered on zero. Both '
+        '(not renormalized away). The yellow box (same color as ground_truth/draw_boxes.py\'s '
+        'ATTACK_BOX_COLOR, reused directly from there) marks GT patches (any pixel actually changed).\n'
+        '- No blue anywhere: sequential color (white -> dark red, \'Reds\') covers raw attention; '
+        'diverging color (purple negative / orange positive, \'PuOr_r\') covers attack-minus-clean '
+        'change, centered on zero. Both '
         'use a 99.5th-percentile cap (not the true max) shared across every block of a given '
         'attack, so a single extreme sample or patch can\'t blank out the rest, while the real '
         'block-to-block story (near-zero early on, then increasingly concentrated) still shows. '
