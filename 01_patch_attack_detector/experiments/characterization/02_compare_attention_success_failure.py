@@ -30,12 +30,13 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
 # 양 끝이 검정으로 가면 원본/공격/차이가 다 어두워져서 구분이 안 된다 -- 끝 색을 원색으로 둔다.
 # raw attention: 흰색 -> 순수 파랑. 차이: 감소=연초록->밝은 초록->진한 초록(#008000), 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
-SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', [(0.0, '#ffffff'), (0.15, '#c8c8ff'), (1.0, '#0000ff')])
+SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', [(0.0, '#ffffff'), (0.05, '#d0d0ff'), (0.2, '#8080ff'), (1.0, '#0000ff')])
 # 0은 흰색. 흰색에서 바로 연한 초록/연한 빨강으로 건너뛴 뒤 원색으로 진해진다 -- 선형으로
 # 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다. 값 스케일은 선형(눈금 간격 균일)으로 두고
 # 작은 값을 보이게 하는 건 색 램프 쪽에서 한다.
 DIVERGING = LinearSegmentedColormap.from_list('green_white_red', [
-    (0.0, '#008000'), (0.3, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (0.7, '#ff0000'), (1.0, '#800000')])
+    (0.0, '#008000'), (0.3, '#00ff00'), (0.425, '#66ff66'), (0.475, '#ccffcc'), (0.5, '#ffffff'),
+    (0.525, '#ffcccc'), (0.575, '#ff6666'), (0.7, '#ff0000'), (1.0, '#800000')])
 
 METRICS = {'tv': 'Total variation', 'gt_delta': 'Attention change in GT region (pp)'}
 
