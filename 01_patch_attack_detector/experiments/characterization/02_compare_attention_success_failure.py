@@ -34,7 +34,7 @@ SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', ['#ffffff', '#0000f
 # 0은 흰색. 흰색에서 바로 연한 초록/연한 빨강으로 건너뛴 뒤 원색으로 진해진다 -- 선형으로
 # 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다.
 DIVERGING = LinearSegmentedColormap.from_list('green_white_red', [
-    (0.0, '#008000'), (0.3, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (1.0, '#ff0000')])
+    (0.0, '#008000'), (0.3, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (0.7, '#ff0000'), (1.0, '#800000')])
 
 
 class SignedPowerNorm(Normalize):
