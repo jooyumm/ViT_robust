@@ -224,12 +224,13 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
                 cls_gain = metrics['cls_delta'][sample_i, layer_i] * 100
                 axis.set_xlabel(f'GT {gt_gain:+.2f} pp | CLS {cls_gain:+.2f} pp', fontsize=8)
     # raw(파랑)는 Clean/Attack이 같은 스케일이라 하나만 두고, 차이 컬러바와 길이·위치를 맞춘다.
-    # 위치는 예전 파랑 컬러바 자리(그림 가운데쯤), 길이도 그때 정도로 둔다.
+    # 12개 레이어 그림은 짧게(그림 가운데쯤), 레이어 몇 개만 그린 그림은 행 전체 높이로 길게 둔다.
+    bar_box = [.1, .064, .35, .928] if len(layers) <= 4 else [.1, .42, .35, .22]
     for grid_col, image, label, extend in [(2, column_image[0], 'Raw attention (%)', 'max'),
                                              (4, column_image[2], '(Attack − clean) (pp)', 'both')]:
         holder = figure.add_subplot(grid[1:, grid_col])
         holder.set_axis_off()
-        figure.colorbar(image, cax=holder.inset_axes([.1, .42, .35, .22]), extend=extend, label=label)
+        figure.colorbar(image, cax=holder.inset_axes(bar_box), extend=extend, label=label)
     label_value = int(data['label'][sample_i])
     clean_pred = int(data['clean__prediction'][sample_i])
     attacked_pred = int(data[attack + '__prediction'][sample_i])
