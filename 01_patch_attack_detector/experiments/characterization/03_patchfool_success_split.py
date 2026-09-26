@@ -1,6 +1,6 @@
 """03 분석(PatchFool 전용): 공격에 성공한 이미지를 "공격 패치로 CLS attention이 실제로 몰린 애"와
 "안 몰린 애"로 나눠 레이어별로 비교한다. 02와 같은 실행 폴더를 입력으로 쓰고, 02의 검증/맵 함수를
-그대로 가져다 쓴다. 기존 결과 파일은 건드리지 않고 새 PNG 3장(focused/unfocused 12개 블록, focused 6·9·12 블록)만 만든다.
+그대로 가져다 쓴다. 기존 결과 파일은 건드리지 않고 새 PNG 3장(focused 12개 블록, focused 6·9·12 블록)만 만든다.
 
 몰림의 정의(임계값 없음): 마지막 블록(12)에서 공격 패치가 CLS attention(헤드 평균)의 196개 patch 중
 1등이다. 배포용 Top-K 탐지기가 의심 위치를 argmax로 잡는 것과 같은 기준이다.
@@ -66,11 +66,9 @@ def main():
     unfocused_idx = np.flatnonzero(unfocused)
     pick_unfocused = int(unfocused_idx[np.argmin(attacked_pct[unfocused_idx].max(axis=1))])
     layers = list(range(manifest['n_layers']))
-    for name, sample_i, label in [
-            ('focused', pick_focused, f'Attack succeeded · FOCUSED (top-1 at block {last + 1})'),
-            ('unfocused', pick_unfocused, f'Attack succeeded · NOT focused (rank {int(rank[pick_unfocused, last])} at block {last + 1})')]:
-        compare02.draw_maps(data, manifest, ATTACK, sample_i, metrics, layers, scales, label,
-                            output / f'attack_success_{name}.png')
+    compare02.draw_maps(data, manifest, ATTACK, pick_focused, metrics, layers, scales,
+                        f'Attack succeeded · FOCUSED (top-1 at block {last + 1})',
+                        output / 'attack_success_focused.png')
     # focused 예시를 6·9·12 블록만 (12개 전부는 세로로 너무 길어서)
     compare02.draw_maps(data, manifest, ATTACK, pick_focused, metrics, [5, 8, 11], scales,
                         f'Attack succeeded · FOCUSED (top-1 at block {last + 1})',

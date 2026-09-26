@@ -145,8 +145,8 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 
 공격에 성공한 PatchFool 이미지를 **마지막 블록(12)에서 공격 패치가 CLS attention 1등인지**로 둘로 나눈다
 (임계값 없음). 이 run(seed 42)에서는 몰림 77장, 안 몰림 5장이다. 안 몰린 쪽은 5장뿐이라 중앙값/IQR을 쓰지
-않고 이미지마다 선 하나로 그린다. 출력은 `results/characterization/patchfool/`의 `attack_success_focused.png`, `attack_success_unfocused.png`
-(12개 레이어 맵; focused는 집단 중앙값에 가장 가까운 표본, unfocused는 공격 패치를 가장 안 본 표본)와
+않고 이미지마다 선 하나로 그린다. 출력은 `results/characterization/patchfool/`의 `attack_success_focused.png`
+(12개 레이어 맵; 집단 중앙값에 가장 가까운 표본)와
 `attack_success_focused_L6_L9_L12.png`(focused 예시의 6·9·12번 블록만)이다. 레이어별 수치(블록 7·8의 공격 패치
 attention/순위)는 스크립트가 표준 출력으로만 찍는다. 02와 같은 run을 읽고 02의 검증·맵 함수를 그대로 쓴다.
 
