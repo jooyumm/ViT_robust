@@ -2,8 +2,9 @@
 "안 몰린 애"로 나눠 레이어별로 비교한다. 02와 같은 실행 폴더를 입력으로 쓰고, 02의 검증/맵 함수를
 그대로 가져다 쓴다. 기존 결과 파일은 건드리지 않고 새 PNG 3장(focused 12개 블록, focused 6·9·12 블록)만 만든다.
 
-몰림의 정의(임계값 없음): 마지막 블록(12)에서 공격 패치가 CLS attention(헤드 평균)의 196개 patch 중
-1등이다. 배포용 Top-K 탐지기가 의심 위치를 argmax로 잡는 것과 같은 기준이다.
+몰림의 정의: 마지막 블록(12)에서 공격 패치가 받는 CLS attention(헤드 평균)이 **같은 이미지 원본에서 그
+patch가 받던 값의 FOCUS_RATIO(3)배 이상**이다. 순위(1등인가)는 원본에서도 그 patch가 77% 1등이라 공격 효과를
+거의 못 가려서, 원본 기준선을 반영하는 배수로 잡았다.
 """
 import argparse
 import importlib.util
@@ -17,6 +18,7 @@ compare02 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(compare02)
 
 ATTACK = 'patchfool'
+FOCUS_RATIO = 3
 LAYERS_OF_INTEREST = (7, 8)   # 논문(ARMOR)의 예시 그림에서 "activated" 단계로 나온 구간 근처
 
 
@@ -52,29 +54,29 @@ def main():
 
     attacked_pct, clean_pct, rank = attacked_patch_series(metrics, gt_patch)
     last = rank.shape[1] - 1
-    focused = success & (rank[:, last] == 1)
+    ratio = attacked_pct[:, last] / clean_pct[:, last]
+    focused = success & (ratio >= FOCUS_RATIO)
     unfocused = success & ~focused
     if not focused.any() or not unfocused.any():
         raise ValueError(f'집단이 비었습니다: focused={focused.sum()}, not focused={unfocused.sum()}')
+    failed = outcome == 0
 
-    # 대표 예시: focused는 마지막 블록 값이 집단 중앙값에 가장 가까운 표본, not focused는 전 레이어에서
-    # 공격 패치 attention의 최댓값이 가장 작은 표본(= 공격 패치를 가장 안 본 표본).
+    # 대표 예시: focused 집단에서 마지막 블록의 공격 패치 attention이 집단 중앙값에 가장 가까운 표본.
     scales = compare02.map_scales(metrics, outcome)
     focused_idx = np.flatnonzero(focused)
     pick_focused = int(focused_idx[np.argmin(np.abs(attacked_pct[focused_idx, last]
                                                     - np.median(attacked_pct[focused_idx, last])))])
-    unfocused_idx = np.flatnonzero(unfocused)
-    pick_unfocused = int(unfocused_idx[np.argmin(attacked_pct[unfocused_idx].max(axis=1))])
     layers = list(range(manifest['n_layers']))
     compare02.draw_maps(data, manifest, ATTACK, pick_focused, metrics, layers, scales,
-                        f'Attack succeeded · FOCUSED (top-1 at block {last + 1})',
+                        f'Attack succeeded · FOCUSED (>= {FOCUS_RATIO}x clean at block {last + 1})',
                         output / 'attack_success_focused.png')
     # focused 예시를 6·9·12 블록만 (12개 전부는 세로로 너무 길어서)
     compare02.draw_maps(data, manifest, ATTACK, pick_focused, metrics, [5, 8, 11], scales,
-                        f'Attack succeeded · FOCUSED (top-1 at block {last + 1})',
+                        f'Attack succeeded · FOCUSED (>= {FOCUS_RATIO}x clean at block {last + 1})',
                         output / 'attack_success_focused_L6_L9_L12.png')
-    print(f'focused example: sample {int(data["sample_index"][pick_focused])}, '
-          f'not-focused example: sample {int(data["sample_index"][pick_unfocused])}')
+    print(f'focused example: sample {int(data["sample_index"][pick_focused])}')
+    print(f'ratio >= {FOCUS_RATIO} at block {last + 1}: successes {focused.sum()}/{success.sum()}, '
+          f'failures {(failed & (ratio >= FOCUS_RATIO)).sum()}/{failed.sum()}')
 
     for block in LAYERS_OF_INTEREST:
         b = block - 1
