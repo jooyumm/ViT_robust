@@ -157,6 +157,16 @@ def robust_scale(values, percentile=99):
     return float(np.percentile(finite, percentile)) if finite.size else 1e-8
 
 
+def map_scales(metrics, outcome):
+    """맵 색 범위(퍼센트 포인트 단위). 같은 공격의 모든 clean 정답 표본·전 레이어에서 잡는다."""
+    valid = outcome >= 0
+    mass_max = robust_scale(100 * np.concatenate([metrics['clean'][valid, :, 1:],
+                                                    metrics['attacked'][valid, :, 1:]]),
+                            percentile=99.5)
+    delta_max = robust_scale(100 * metrics['delta'][valid, :, 1:], percentile=99.5)
+    return max(mass_max, 1e-8), max(delta_max, 1e-8)
+
+
 def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_label, output):
     """clean/attack 사진 + GT coverage를 첫 행에, 이후 지정한 레이어만 clean/attack/차이로 그린다.
     모든 행(사진 포함)이 같은 3열 grid를 쓰고, 컬러바는 열 전체(사진 행 포함)에서 폭을
@@ -330,12 +340,7 @@ def main():
         # 차이(초반 옅음 -> 후반 진함)는 그대로 드러난다.
         # 맵에 그리는 값은 전부 *100(퍼센트 포인트)이라 스케일도 같은 단위로 잡아야 한다 --
         # 여기서 *100을 빼먹으면 vmax가 100배 작아져서 거의 모든 patch가 최고색으로 잘린다.
-        valid = outcome >= 0
-        mass_max = robust_scale(100 * np.concatenate([metrics['clean'][valid, :, 1:],
-                                                        metrics['attacked'][valid, :, 1:]]),
-                                percentile=99.5)
-        delta_max = robust_scale(100 * metrics['delta'][valid, :, 1:], percentile=99.5)
-        scales = max(mass_max, 1e-8), max(delta_max, 1e-8)
+        scales = map_scales(metrics, outcome)
 
         counts = {}
         for status, (code, status_label) in OUTCOMES.items():

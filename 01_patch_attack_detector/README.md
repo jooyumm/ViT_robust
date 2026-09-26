@@ -140,3 +140,17 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 공유 PatchFool은 unbounded 픽셀 공격이고 LaVAN과 면적·최적화 예산이 다르다. 공격별 성공/실패를
 비교하며 서로의 차이를 공격 목적함수 하나의 효과로 해석하지 않는다. attention 변화와 오분류의
 연관성이 곧 원인이라는 주장은 하지 않는다. 출력 그림은 PNG만 사용하고 PDF·로그 파일은 만들지 않는다.
+
+### PatchFool 성공 사례 안에서: 몰린 애 vs 안 몰린 애 (`03_patchfool_success_split.py`)
+
+공격에 성공한 PatchFool 이미지를 **마지막 블록(12)에서 공격 패치가 CLS attention 1등인지**로 둘로 나눈다
+(임계값 없음). 이 run(seed 42)에서는 몰림 77장, 안 몰림 5장이다. 안 몰린 쪽은 5장뿐이라 중앙값/IQR을 쓰지
+않고 이미지마다 선 하나로 그린다. 출력은 `results/characterization/patchfool/`의
+`ex_attack_success_split_by_layer.png`(공격 패치 attention %와 순위, 레이어별)와
+`ex_attack_success_{focused,unfocused}_<id>.png`(12개 레이어 맵; focused는 집단 중앙값에 가장 가까운 표본,
+unfocused는 공격 패치를 가장 안 본 표본). 02와 같은 run을 읽고 02의 검증·맵 함수를 그대로 쓴다.
+
+주의: 여기서 쓰는 신호는 **CLS query의 attention 행**이다. ARMOR(Liu et al., ICML 2023)의 탐지 신호는 모든 query에
+대한 열(column) 평균이라 서로 다른 신호다(`experiments/characterization/test/`가 두 신호를 비교한다). 논문의
+"layer 7 activated / 9~10 polluted"는 ViT-B/32의 Sealyham 이미지 한 장(Figure 4)의 예시이며, 모든 모델·이미지에
+적용되는 규칙으로 서술된 것이 아니다.
