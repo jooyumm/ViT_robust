@@ -12,6 +12,10 @@
 - Occlusion          : PatchCleanser/Minority Reports 계열의 1라운드 마스킹 불일치 — 64px 정사각 마스크를 32px
                        간격으로 36번 씌워 원래 예측과 달라지는 비율. forward 37번이 필요하다.
 - LSW(new)           : detector/emergent_window_v2.py
+- Value distance     : detector/value_outlier_v2.py (정상 reference run의 clean 이미지로 z 보정)
+- LSW OR value       : 두 경로를 각자 표준화한 뒤 max
+- Pixel max local TV : 모델 없이 16x16 창의 국소 변화량 최댓값(픽셀 수준 기준선 — 공격이 유효 픽셀 범위를 벗어나거나
+                       고주파 잡음이면 이것만으로도 잡힌다)
 
 프로토콜: 이미지 index 앞 절반/뒤 절반으로 나눠 교차 보정한다(한쪽의 clean 이미지로 임계값 = 95번째
 백분위수를 정하고 다른 쪽에서 평가, 두 번 하고 합침). AUROC는 임계값이 필요 없어서 전체로 계산하고
@@ -47,6 +51,7 @@ def load_module(name, path):
 compare02 = load_module('compare02', HERE.parents[0] / 'characterization' / '02_compare_attention_success_failure.py')
 import topk_mass_v1 as v1          # noqa: E402
 import emergent_window_v2 as lsw   # noqa: E402
+import value_outlier_v2 as val    # noqa: E402
 
 BATCH = 25
 
@@ -104,6 +109,12 @@ def occlusion_disagreement(model, images, mask=4, stride=2, patch=16):
     return changed / (len(starts) ** 2)
 
 
+def max_patch_tv(images):
+    x = torch.from_numpy(images) if isinstance(images, np.ndarray) else images
+    tv = (x[:, :, :, 1:] - x[:, :, :, :-1]).abs().mean(1)[:, :-1, :] + (x[:, :, 1:, :] - x[:, :, :-1, :]).abs().mean(1)[:, :, :-1]
+    return F.avg_pool2d(tv.unsqueeze(1), 16, stride=8).flatten(1).max(1).values.numpy()
+
+
 def batched(fn, images, device):
     out = []
     for s in range(0, len(images), BATCH):
@@ -111,7 +122,7 @@ def batched(fn, images, device):
     return torch.cat(out).numpy()
 
 
-def all_scores(model, data, device, attacks):
+def all_scores(model, data, device, attacks, reference):
     """{탐지기: {'clean'|'patchfool'|'lavan': 점수 (N,)}}"""
     groups = ('clean',) + tuple(attacks)
     scores = {}
@@ -127,9 +138,20 @@ def all_scores(model, data, device, attacks):
         armor_scan[g] = ratio_top1_top2(cols).max(1).values.numpy()
         occlusion[g] = batched(lambda x: occlusion_disagreement(model, x), images, device)
         print(f'  {g}: column/occlusion scores done', flush=True)
+    lsw_ref, value_reference, value_ref_scores = reference
+    value, combined, pixel = {}, {}, {}
+    for g in groups:
+        images = torch.from_numpy(data[g + '__images'])
+        distance = batched(lambda x: val.value_distance(model, x), images, device)
+        value[g] = val.value_score(value_reference.z(distance))
+        combined[g] = val.combined_score(scores['LSW (new)'][g], value[g], lsw_ref, value_ref_scores)
+        pixel[g] = max_patch_tv(data[g + '__images'])
     scores['ARMOR-avg (column ratio)'] = armor_avg
     scores['ARMOR-scan (layer max)'] = armor_scan
     scores['Occlusion (36 masks)'] = occlusion
+    scores['Value distance (z-max)'] = value
+    scores['LSW OR value'] = combined
+    scores['Pixel max local TV (no model)'] = pixel
     return scores
 
 
@@ -195,7 +217,10 @@ def timing(model, data, device, n=100):
            'LSW (new)': lambda x: lsw.detection_score(model, x),
            'ARMOR-avg (column ratio)': lambda x: ratio_top1_top2(column_means(model, x).mean(1)),
            'ARMOR-scan (layer max)': lambda x: ratio_top1_top2(column_means(model, x)).max(1).values,
-           'Occlusion (36 masks)': lambda x: occlusion_disagreement(model, x)}
+           'Occlusion (36 masks)': lambda x: occlusion_disagreement(model, x),
+           'Value distance (z-max)': lambda x: val.value_distance(model, x).flatten(1).max(1).values,
+           'LSW OR value': lambda x: (lsw.detection_score(model, x), val.value_distance(model, x).flatten(1).max(1).values)[0],
+           'Pixel max local TV (no model)': lambda x: torch.from_numpy(max_patch_tv(x.cpu()))}
     out = {}
     for name, fn in fns.items():
         fn(images[:BATCH])
@@ -209,8 +234,9 @@ def timing(model, data, device, n=100):
 
 
 def draw(table, latency, names, output, title, attacks):
-    figure, axes = plt.subplots(1, len(attacks) + 1, figsize=(5.6 * (len(attacks) + 1), 5.2), layout='constrained')
-    colors = {'LSW (new)': '#d03b3b'}
+    figure, axes = plt.subplots(1, len(attacks) + 1, figsize=(5.6 * (len(attacks) + 1), 6.6), layout='constrained')
+    colors = {'LSW (new)': '#d03b3b', 'LSW OR value': '#e8710a', 'Value distance (z-max)': '#e8a75a',
+              'Pixel max local TV (no model)': '#3b6fd0'}
     y = np.arange(len(names))
     for axis, attack in zip(axes[:-1], attacks):
         for i, name in enumerate(names):
@@ -244,6 +270,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True, help='결과 PNG 경로')
+    parser.add_argument('--reference_run', type=Path, required=True, help='정상 점수 보정용 run(평가 run과 달라야 함)')
     args = parser.parse_args()
     manifest, data = compare02.load_paired_run(args.run)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -253,7 +280,14 @@ def main():
     print(f'{len(data["label"])} images, device={device}', flush=True)
 
     attacks = [a for a in ('patchfool', 'lavan') if a in manifest['attacks']]
-    scores = all_scores(model, data, device, attacks)
+    if args.reference_run.resolve() == args.run.resolve():
+        raise SystemExit('reference_run은 평가 run과 달라야 합니다.')
+    _, ref_data = compare02.load_paired_run(args.reference_run)
+    ref_rows = stored_rows(ref_data['clean__attention'])
+    ref_distance = batched(lambda x: val.value_distance(model, x), torch.from_numpy(ref_data['clean__images']), device)
+    value_reference = val.Reference(ref_distance)
+    reference = (lsw.surge_score(ref_rows).numpy(), value_reference, val.value_score(value_reference.z(ref_distance)))
+    scores = all_scores(model, data, device, attacks, reference)
     sanity_check(model, data, scores, device)
     table = evaluate(scores, data, attacks)
     latency = timing(model, data, device)

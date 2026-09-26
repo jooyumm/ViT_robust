@@ -70,6 +70,7 @@ def main():
     parser.add_argument('--attacks', nargs='+', choices=['patchfool', 'lavan'], default=['patchfool', 'lavan'])
     parser.add_argument('--pf_iters', type=int, default=250)
     parser.add_argument('--attn_layer_idx', type=int, default=4, help='PatchFool 위치 선택 레이어의 0-based 인덱스')
+    parser.add_argument('--pf_clip_valid', action='store_true', help='PatchFool 패치 픽셀을 유효 이미지 범위로 제한')
     parser.add_argument('--lavan_steps', type=int, default=40)
     parser.add_argument('--lavan_patch_ratio', type=float, default=.02)
     parser.add_argument('--device', choices=['cuda', 'cpu'], default='cuda')
@@ -170,7 +171,8 @@ def main():
                 attacked, _ = patch_fool_attack(
                     model, images, labels, torch.device(args.device), patch_size_model=16,
                     num_patch=1, attack_mode='Attention', patch_select='Attn',
-                    attn_layer_idx=args.attn_layer_idx, train_attack_iters=args.pf_iters)
+                    attn_layer_idx=args.attn_layer_idx, train_attack_iters=args.pf_iters,
+                    clip_valid_range=args.pf_clip_valid)
             else:
                 attacked = lavan_attack(model, images, labels, torch.device(args.device),
                                        patch_ratio=args.lavan_patch_ratio, steps=args.lavan_steps)

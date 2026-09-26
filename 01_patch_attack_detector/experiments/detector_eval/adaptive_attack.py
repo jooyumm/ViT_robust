@@ -79,7 +79,7 @@ def patch_mask(index, size, device):
     return mask
 
 
-def attack(model, images, labels, mode, tau, weight=100., iters=250, seed=0):
+def attack(model, images, labels, mode, tau, weight=100., iters=250, seed=0, clip_valid=False):
     torch.manual_seed(seed)
     mask = patch_mask(pick_patch(model, images), images.shape[-1], images.device)
     delta = (torch.randn_like(images) * 0.1).requires_grad_(True)
@@ -96,6 +96,8 @@ def attack(model, images, labels, mode, tau, weight=100., iters=250, seed=0):
         (-loss).backward()
         optimizer.step()
         scheduler.step()
+        if clip_valid:
+            delta.data = (images + delta.data).clamp(-1, 1) - images
     return (images + delta * mask).detach()
 
 
@@ -118,6 +120,7 @@ def main():
     parser.add_argument('--run', type=Path, required=True, help='정상 이미지 점수로 임계값을 정하고, 공격 대상 이미지를 뽑는 run')
     parser.add_argument('--n', type=int, default=100, help='공격할 clean 정답 이미지 수')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--clip_valid', action='store_true', help='패치 픽셀을 유효 이미지 범위 [-1,1]로 제한')
     args = parser.parse_args()
     manifest, data = compare02.load_paired_run(args.run)
     device = torch.device('cuda')
@@ -140,7 +143,7 @@ def main():
         tau = {'ce': 0., 'adapt_v1': 0.9 * thresholds['v1 top-4 mass @12'], 'adapt_lsw': 0.9 * thresholds['LSW (new)']}[mode]
         adv = []
         for s in range(0, len(images), 20):
-            adv.append(attack(model, images[s:s + 20].to(device), labels[s:s + 20].to(device), mode, tau).cpu())
+            adv.append(attack(model, images[s:s + 20].to(device), labels[s:s + 20].to(device), mode, tau, clip_valid=args.clip_valid).cpu())
             print(f'{mode}: {min(s + 20, len(images))}/{len(images)}', flush=True)
         adv = torch.cat(adv)
         with torch.no_grad():
@@ -170,7 +173,7 @@ def main():
         axis.set_title(title, fontsize=10)
         axis.grid(alpha=.2, axis='y')
     axes[0].legend(fontsize=8)
-    figure.suptitle(f'Adaptive attacks (n={len(images)} clean-correct images, unbounded 16x16 patch, thresholds known to attacker)')
+    figure.suptitle(f'Adaptive attacks (n={len(images)} clean-correct images, {"valid-range" if args.clip_valid else "unbounded"} 16x16 patch, thresholds known to attacker)')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(args.output, dpi=160, bbox_inches='tight')
     plt.close(figure)

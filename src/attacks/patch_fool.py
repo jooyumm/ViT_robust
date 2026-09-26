@@ -149,6 +149,7 @@ def patch_fool_attack(
     gamma=0.95,
     atten_loss_weight=0.002,
     mild_l_inf=0.0,
+    clip_valid_range=False,       # True: 패치 픽셀을 정규화 공간 [-1,1](=유효 이미지 범위)로 매 step 잘라낸다
 ):
     """
     Returns: adv_images (B,3,H,W), attn_weights (list, 시각화용)
@@ -253,6 +254,8 @@ def patch_fool_attack(
         with torch.no_grad():
             if mild_l_inf != 0.0:
                 delta.data = delta.data.clamp(-mild_l_inf, mild_l_inf)
+            if clip_valid_range:
+                delta.data = (original_images + delta.data).clamp(-1, 1) - original_images
 
     # ── 6. 최종 adversarial image ─────────────────────────────────────────
     with torch.no_grad():
