@@ -155,3 +155,35 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 대한 열(column) 평균이라 서로 다른 신호다(`experiments/characterization/test/`가 두 신호를 비교한다). 논문의
 "layer 7 activated / 9~10 polluted"는 ViT-B/32의 Sealyham 이미지 한 장(Figure 4)의 예시이며, 모든 모델·이미지에
 적용되는 규칙으로 서술된 것이 아니다.
+
+## 탐지기 v2: Late-Surge Window (LSW) — `detector/emergent_window_v2.py`
+
+v1(마지막 블록 CLS top-4 mass)은 자연 attention sink 때문에 기준선이 높고, attention이 여러 patch에 퍼지는
+LaVAN에서는 점수가 오히려 낮아진다(AUROC 0.34). LSW는 (1) 블록 7~9 참조 대비 **후반 블록(10~12)에서 새로 생긴**
+attention만 보고(자연 sink/물체는 7~9에 이미 형성돼 있어 점수가 안 오른다), (2) 공격이 차지할 수 있는 크기인
+**3x3 patch 창**으로 합산한다. 점수 = 모든 3x3 창의 max( mean_{10,11,12} 창합 - max_{7,8,9} 창합 ), CLS query 행만
+쓰고 forward 한 번, 학습 없음, 정상 이미지로 임계값만 보정(v1과 같은 방식). 설정은 `run_s42`(설계용)에서만 정하고
+커밋으로 고정한 뒤, 다른 시드/공격 설정의 run에서 평가했다.
+
+`experiments/detector_eval/compare_detectors.py`가 같은 이미지·같은 프로토콜(앞/뒤 절반 교차 보정, FPR 5%,
+AUROC는 표본 부트스트랩 95% CI)로 비교한다. 비교 대상은 이 저장소에서 다시 구현한 점수판이다(ARMOR는 탐지 점수만,
+마스킹 복원은 안 함 / Occlusion은 PatchCleanser·Minority Reports 계열의 1라운드 마스킹 불일치 36회).
+
+held-out(seed 7, 500쌍, `results/detector_eval/heldout_seed7.png`), 오분류에 성공한 공격만, AUROC / 5% FPR 탐지율:
+
+| 탐지기 | PatchFool | LaVAN | forward |
+|---|---|---|---|
+| v1 top-4 mass @12 | 0.88 / 70% | 0.34 / 1% | 1 |
+| v1 top-1 mass @12 | 0.93 / 83% | 0.30 / 1% | 1 |
+| ARMOR-scan (열 평균 1등/2등 비, 레이어 최댓값) | 0.94 / 77% | 0.50 / 5% | 1 |
+| Occlusion (36 마스크) | 0.85 / 8% | 0.91 / 23% | 37 |
+| **LSW** | **0.97 / 94%** | 0.86 / 64% | 1 |
+
+처음 보는 공격 설정(`unseen_*.png`)에서도 방향이 같다: LaVAN 패치 5% 면적 LSW 0.93 / 82%(v1 0.26, Occlusion 0.92 / 43%),
+1% 면적 LSW 0.75 / 52%(Occlusion 0.95 / 51%), PatchFool 선택 레이어 8 LSW 0.98 / 94%(ARMOR-scan 0.97 / 86%).
+
+한계: (1) **탐지기를 아는 공격자에게는 뚫린다** — 임계값을 아는 적응형 공격에서 LSW 탐지율 0%(공격 성공률은 90%→40%로
+떨어진다). v1도 같은 방식으로 0%가 되고(성공률 49%), 다만 v1을 겨냥한 공격은 LSW에 82% 걸린다(`adaptive_attack.png`,
+100장). (2) LaVAN에서 Occlusion의 AUROC가 더 높다(0.91 vs 0.86; 작은 패치에서 격차가 크다) — 대신 37배 비싸고 5% FPR
+탐지율은 낮다. (3) ViT-B/16 한 모델, 공격 두 종류, 이미지 500장. (4) 창 크기(3x3)와 블록 구간은 2% 면적 패치·ViT-B/16
+기준이다.
