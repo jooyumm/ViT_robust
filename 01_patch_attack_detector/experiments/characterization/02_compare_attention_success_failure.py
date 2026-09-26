@@ -29,12 +29,12 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
 # 방어 관점에서 공격 성공=critical, 실패=good인 상태 색 사용 -- 이름의 의미와 색이 서로 확인해준다.
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
 # 양 끝이 검정으로 가면 원본/공격/차이가 다 어두워져서 구분이 안 된다 -- 끝 색을 원색으로 둔다.
-# raw attention: 흰색 -> 순수 파랑. 차이: 감소=연초록->초록, 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
+# raw attention: 흰색 -> 순수 파랑. 차이: 감소=연초록->밝은 초록->진한 초록(#008000), 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
 SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', ['#ffffff', '#0000ff'])
 # 0은 흰색. 흰색에서 바로 연한 초록/연한 빨강으로 건너뛴 뒤 원색으로 진해진다 -- 선형으로
 # 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다.
 DIVERGING = LinearSegmentedColormap.from_list('green_white_red', [
-    (0.0, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (1.0, '#ff0000')])
+    (0.0, '#008000'), (0.3, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (1.0, '#ff0000')])
 
 
 class SignedPowerNorm(Normalize):
