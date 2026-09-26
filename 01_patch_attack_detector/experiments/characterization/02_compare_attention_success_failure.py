@@ -227,8 +227,14 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
     for column, label, extend in [(0, 'Raw attention (%)', 'max'),
                                    (1, 'Raw attention (%)', 'max'),
                                    (2, 'Attack − clean (pp)', 'both')]:
-        figure.colorbar(column_image[column], ax=[axes[r, column] for r in range(n_rows)],
-                        shrink=.85, extend=extend, label=label)
+        bar = figure.colorbar(column_image[column], ax=[axes[r, column] for r in range(n_rows)],
+                              shrink=.85, extend=extend, label=label)
+        if column == 2:
+            # 눈금을 정수(1,2,3...)로 두면 |값|^0.5 스케일 때문에 양 끝 눈금이 겹친다 -- 상한의
+            # 비율로 잡으면 스케일 위에서 간격이 고르다.
+            ticks = np.array([-1, -.5, -.25, -.05, 0, .05, .25, .5, 1]) * delta_max
+            bar.set_ticks(ticks)
+            bar.set_ticklabels([f'{v:.2g}' for v in ticks])
     label_value = int(data['label'][sample_i])
     clean_pred = int(data['clean__prediction'][sample_i])
     attacked_pred = int(data[attack + '__prediction'][sample_i])
