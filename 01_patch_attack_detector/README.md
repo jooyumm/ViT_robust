@@ -201,3 +201,28 @@ ARMOR-scan 0.66 / 13%, Occlusion 0.91 / 29%, LSW OR Value 0.92 / 70%, **픽셀 �
 LSW에 51~82% 걸린다(`adaptive_attack*.png`, 100장). (2) LaVAN에서 Occlusion의 AUROC가 더 높다(0.91~0.92 vs 0.85~0.86)
 — 대신 37배 비싸고 5% FPR 탐지율은 낮다(23~32%). (3) ViT-B/16 한 모델, 공격 두 종류. (4) 창 크기(3x3)와 블록 구간은
 2% 면적 패치·ViT-B/16 기준이다. (5) 위 표는 이 저장소의 재구현 점수판 비교이며 원 논문 전체 방어와의 비교가 아니다.
+
+## 탐지기 v3: LSW 하나로 정리 — `detector/lsw_v3.py`
+
+**왜 이것 하나인가** (LaVAN = 픽셀 검사가 안 통해서 정보량 있는 평가, 새 시드 2개; PatchFool은 위 경고 참고):
+
+| 후보 | LaVAN AUROC / 5% FPR 탐지 | 비용 | 결론 |
+|---|---|---|---|
+| v1 top-4 mass | 0.34 / 1% | 1 forward | LaVAN을 못 잡음 |
+| ARMOR-scan(재구현) | 0.50~0.53 / 5~9% | 1 forward | LaVAN을 못 잡음 |
+| Occlusion 36회 | 0.91~0.92 / 23~32% | 37 forward (39ms) | AUROC는 최고, 탐지율·비용에서 불리 |
+| Value 거리, LSW OR Value | 0.72 / 36%, 0.86 / 66% | 1~2배 | 새 시드에서 LSW 대비 이득 없음 → 제외 |
+| **LSW** | **0.85~0.86 / 64~67%** | **1 forward (1.3ms)** | **선택** |
+
+v3는 v2와 **점수가 완전히 같다**(`check_lsw_v3.py`가 같은 텐서임을 확인). 새로 튜닝하지 않았고, 정상 이미지로 임계값을
+정하는 `fit()`과 경보·점수·의심 patch를 돌려주는 `detect()`를 붙여 배포용으로 정리했다. 사용:
+
+```python
+detector = LSWDetector(model); detector.fit(clean_images, fpr=0.05)
+result = detector.detect(images)   # alarm, score, patches(의심 3x3 창의 patch index 9개)
+```
+
+"정상 500장(seed 7)으로 한 번 보정 → 다른 run(seed 21, 유효 범위 PatchFool)에서 평가"한 결과: 정상 오탐 4.8%(목표 5%),
+오분류에 성공한 공격 탐지 PatchFool 72%(242장)·LaVAN 68%(265장), 경보가 울린 이미지에서 의심 창이 실제 공격
+patch와 겹친 비율 98%·99%. 한계는 위 v2 절과 같다: 적응형 공격에 뚫리고, PatchFool은 픽셀 검사가 더 잘 잡으며,
+ViT-B/16·2% 면적 패치 기준이다.
