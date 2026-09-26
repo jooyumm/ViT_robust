@@ -353,7 +353,7 @@ def main():
             # 폴더로 나누지 않고 파일명에 상태를 넣는다 -- attack_success/attack_fail
             # 폴더 두 개보다, 공격당 폴더 하나에 파일 몇 개가 있는 게 훑어보기 쉽다.
             draw_maps(data, manifest, attack, sample_i, metrics, example_layers, scales,
-                      status_label, attack_dir / f'ex_{status}_{sample_id}.png')
+                      status_label, attack_dir / f'{status}.png')
 
         readme_sections.append(
             f'## {attack}\n\n'
@@ -363,8 +363,8 @@ def main():
             f'- Flagged blocks (largest median TV / largest TV jump / largest '
             f'success-vs-fail GT gap): {", ".join(str(i + 1) for i in flagged) or "none"}.\n'
             f'- `{attack}/layer_comparison.png`: population median + IQR by block.\n'
-            f'- `{attack}/ex_attack_success_<id>.png`, '
-            f'`{attack}/ex_attack_fail_<id>.png`: one representative example each, '
+            f'- `{attack}/attack_success.png`, '
+            f'`{attack}/attack_fail.png`: one representative example each (sample id is in the figure title), '
             f'clean vs. attack vs. difference at every block (1-{n_layers}) — the flagged blocks above '
             f'are where the population-level chart says to look closest, not the only blocks shown.\n\n'
             f'{layer_table(n_layers, median_tv, median_gt_delta, flagged)}\n')
@@ -375,8 +375,8 @@ def main():
         'reproducible source (seeds, hashes, raw images/attention); re-running this script only '
         'overwrites the files below, not that run.\n\n'
         '- One folder per attack (`patchfool/`, `lavan/`), no outcome subfolders — the outcome is '
-        'in the filename instead: `ex_attack_success_*` (attack succeeded, image '
-        'misclassified) vs. `ex_attack_fail_*` (attack failed, image still correct). These '
+        'in the filename instead: `attack_success*` (attack succeeded, image '
+        'misclassified) vs. `attack_fail*` (attack failed, image still correct). These '
         'names describe the ATTACK\'s outcome, not a pipeline failure.\n'
         '- Maps show CLS-query attention to each patch key, head-averaged, CLS key mass kept '
         '(not renormalized away). GT patches (any pixel actually changed) are outlined with '

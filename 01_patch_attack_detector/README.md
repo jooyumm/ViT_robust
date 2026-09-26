@@ -95,8 +95,8 @@ results/characterization/
   README.md                      결과 해석 기준 + 공격별 레이어 요약표(마크다운, CSV 없음)
   <attack>/                      patchfool/, lavan/ 각각 — 하위 폴더 없이 파일 몇 개뿐
     layer_comparison.png         12개 레이어의 attack_success/attack_fail 중앙값과 IQR
-    example_attack_success_sample<id>.png  공격 성공(오분류) 대표 사례 1장 — 12개 레이어 전부
-    example_attack_fail_sample<id>.png     공격 실패(여전히 정답) 대표 사례 1장 — 12개 레이어 전부
+    attack_success.png           공격 성공(오분류) 대표 사례 1장 — 12개 레이어 전부(표본 id는 그림 제목에)
+    attack_fail.png              공격 실패(여전히 정답) 대표 사례 1장 — 12개 레이어 전부
 ```
 
 파일 이름에 `attack_success`/`attack_fail`을 넣은 이유: "success/failure"만 쓰면 공격이
@@ -133,7 +133,7 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 전체 clean 정답 표본에서 TV 중앙값이 가장 큰 레이어, 이전 레이어보다 TV 중앙값이 가장 많이
 증가한 레이어, 성공/실패 GT 증감 중앙값 차이가 가장 큰 레이어를 탐색 후보로 표시한다(`results/characterization/README.md`의
 표에 ⚠로 표시). 표본이 없는 집단의 비교는 생략한다. 이는 탐색용 순위이며 통계적 이상 판정이나
-인과 증거가 아니다. `example_attack_success_*`, `example_attack_fail_*`의 대표 사례는 각 집단의
+인과 증거가 아니다. `attack_success.png`, `attack_fail.png`의 대표 사례는 각 집단의
 평균 TV가 중앙값에 가장 가까운 표본이며, 12개 레이어 전부에서 clean/attack/차이 맵을 보여준다 —
 표시된 ⚠ 레이어는 어디부터 눈여겨봐야 하는지 알려주는 표시일 뿐, 다른 레이어를 생략하지 않는다.
 
@@ -145,10 +145,10 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 
 공격에 성공한 PatchFool 이미지를 **마지막 블록(12)에서 공격 패치가 CLS attention 1등인지**로 둘로 나눈다
 (임계값 없음). 이 run(seed 42)에서는 몰림 77장, 안 몰림 5장이다. 안 몰린 쪽은 5장뿐이라 중앙값/IQR을 쓰지
-않고 이미지마다 선 하나로 그린다. 출력은 `results/characterization/patchfool/`의
-`ex_attack_success_split_by_layer.png`(공격 패치 attention %와 순위, 레이어별)와
-`ex_attack_success_{focused,unfocused}_<id>.png`(12개 레이어 맵; focused는 집단 중앙값에 가장 가까운 표본,
-unfocused는 공격 패치를 가장 안 본 표본). 02와 같은 run을 읽고 02의 검증·맵 함수를 그대로 쓴다.
+않고 이미지마다 선 하나로 그린다. 출력은 `results/characterization/patchfool/`의 `attack_success_focused.png`, `attack_success_unfocused.png`
+(12개 레이어 맵; focused는 집단 중앙값에 가장 가까운 표본, unfocused는 공격 패치를 가장 안 본 표본)와
+`attack_success_focused_L6_L9_L12.png`(focused 예시의 6·9·12번 블록만)이다. 레이어별 수치(블록 7·8의 공격 패치
+attention/순위)는 스크립트가 표준 출력으로만 찍는다. 02와 같은 run을 읽고 02의 검증·맵 함수를 그대로 쓴다.
 
 주의: 여기서 쓰는 신호는 **CLS query의 attention 행**이다. ARMOR(Liu et al., ICML 2023)의 탐지 신호는 모든 query에
 대한 열(column) 평균이라 서로 다른 신호다(`experiments/characterization/test/`가 두 신호를 비교한다). 논문의

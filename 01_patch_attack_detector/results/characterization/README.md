@@ -2,7 +2,7 @@
 
 Generated from run `/home/jooyumm/ViT_robust/01_patch_attack_detector/results/characterization/attention_comparison/run_s42` — its `manifest.json` and `data/` hold the reproducible source (seeds, hashes, raw images/attention); re-running this script only overwrites the files below, not that run.
 
-- One folder per attack (`patchfool/`, `lavan/`), no outcome subfolders — the outcome is in the filename instead: `ex_attack_success_*` (attack succeeded, image misclassified) vs. `ex_attack_fail_*` (attack failed, image still correct). These names describe the ATTACK's outcome, not a pipeline failure.
+- One folder per attack (`patchfool/`, `lavan/`), no outcome subfolders — the outcome is in the filename instead: `attack_success*` (attack succeeded, image misclassified) vs. `attack_fail*` (attack failed, image still correct). These names describe the ATTACK's outcome, not a pipeline failure.
 - Maps show CLS-query attention to each patch key, head-averaged, CLS key mass kept (not renormalized away). GT patches (any pixel actually changed) are outlined with ground_truth/draw_boxes.py's colors, reused directly: blue on Clean panels, yellow on attacked/difference panels.
 - Raw attention: white -> pure blue. Attack-minus-clean: pure green (attention lost) -> white (no change) -> pure red (attention concentrated more). Ends are pure colors so panels stay distinguishable at the extremes; the color ramps jump quickly off white so small values stay visible, while the colorbars are linear with evenly spaced ticks. Both use a 99.5th-percentile cap (not the true max) shared across every block of a given attack, so a single extreme sample or patch can't blank out the rest, while the real block-to-block story (near-zero early on, then increasingly concentrated) still shows. Values above the cap are drawn at the top color, marked by the colorbar's arrow, not silently redrawn.
 - GT Δ: attention change summed over GT patches (raw, not renormalized). TV: 0.5 × sum(|attack - clean|) over all 197 tokens including CLS.
@@ -14,7 +14,7 @@ Generated from run `/home/jooyumm/ViT_robust/01_patch_attack_detector/results/ch
 - Attack succeeded (misclassified): n=82. Attack failed (still correct): n=5. (Clean-incorrect samples are excluded from this comparison.)
 - Flagged blocks (largest median TV / largest TV jump / largest success-vs-fail GT gap): 11, 12.
 - `patchfool/layer_comparison.png`: population median + IQR by block.
-- `patchfool/ex_attack_success_<id>.png`, `patchfool/ex_attack_fail_<id>.png`: one representative example each, clean vs. attack vs. difference at every block (1-12) — the flagged blocks above are where the population-level chart says to look closest, not the only blocks shown.
+- `patchfool/attack_success.png`, `patchfool/attack_fail.png`: one representative example each (sample id is in the figure title), clean vs. attack vs. difference at every block (1-12) — the flagged blocks above are where the population-level chart says to look closest, not the only blocks shown.
 
 | Block | TV (median) | GT Δ success (pp) | GT Δ fail (pp) | flagged |
 |---|---|---|---|---|
@@ -36,7 +36,7 @@ Generated from run `/home/jooyumm/ViT_robust/01_patch_attack_detector/results/ch
 - Attack succeeded (misclassified): n=55. Attack failed (still correct): n=32. (Clean-incorrect samples are excluded from this comparison.)
 - Flagged blocks (largest median TV / largest TV jump / largest success-vs-fail GT gap): 11, 12.
 - `lavan/layer_comparison.png`: population median + IQR by block.
-- `lavan/ex_attack_success_<id>.png`, `lavan/ex_attack_fail_<id>.png`: one representative example each, clean vs. attack vs. difference at every block (1-12) — the flagged blocks above are where the population-level chart says to look closest, not the only blocks shown.
+- `lavan/attack_success.png`, `lavan/attack_fail.png`: one representative example each (sample id is in the figure title), clean vs. attack vs. difference at every block (1-12) — the flagged blocks above are where the population-level chart says to look closest, not the only blocks shown.
 
 | Block | TV (median) | GT Δ success (pp) | GT Δ fail (pp) | flagged |
 |---|---|---|---|---|
