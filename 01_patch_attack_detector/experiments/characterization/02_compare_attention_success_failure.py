@@ -168,7 +168,11 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
     if side * side != len(coverage):
         raise ValueError('현재 맵은 정사각 patch 격자를 지원합니다.')
     n_rows = len(layers) + 1
-    figure, axes = plt.subplots(n_rows, 3, figsize=(11, 2.9 * n_rows), layout='constrained')
+    # 이미지 3열 + 컬러바 전용 2열. 컬러바를 이미지 열에서 폭을 빌려 붙이면 열마다 폭이 달라져
+    # 어긋나므로, 컬러바는 별도 열에 두 개(raw / 차이)를 같은 길이·같은 위치로 놓는다.
+    figure = plt.figure(figsize=(12.6, 2.9 * n_rows), layout='constrained')
+    grid = figure.add_gridspec(n_rows, 5, width_ratios=[1, 1, 1, .3, .3])
+    axes = np.array([[figure.add_subplot(grid[r, c]) for c in range(3)] for r in range(n_rows)])
     mean = np.asarray(manifest['mean'])[:, None, None]
     std = np.asarray(manifest['std'])[:, None, None]
     extent = [-.5, side - .5, side - .5, -.5]
@@ -208,12 +212,12 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
                 gt_gain = metrics['gt_delta'][sample_i, layer_i] * 100
                 cls_gain = metrics['cls_delta'][sample_i, layer_i] * 100
                 axis.set_xlabel(f'GT {gt_gain:+.2f} pp | CLS {cls_gain:+.2f} pp', fontsize=8)
-    # 사진 행을 포함한 열 전체에서 공간을 빌려야 모든 행의 폭이 똑같이 유지된다.
-    for column, label, extend in [(0, 'Raw attention (%)', 'max'),
-                                   (1, 'Raw attention (%)', 'max'),
-                                   (2, 'Attack − clean (pp)', 'both')]:
-        figure.colorbar(column_image[column], ax=[axes[r, column] for r in range(n_rows)],
-                        shrink=.85, extend=extend, label=label)
+    # raw(파랑)는 Clean/Attack이 같은 스케일이라 하나만 두고, 차이 컬러바와 길이·위치를 맞춘다.
+    for grid_col, image, label, extend in [(3, column_image[0], 'Raw attention (%)', 'max'),
+                                             (4, column_image[2], '(Attack − clean) (pp)', 'both')]:
+        holder = figure.add_subplot(grid[1:, grid_col])
+        holder.set_axis_off()
+        figure.colorbar(image, cax=holder.inset_axes([.05, .1, .3, .8]), extend=extend, label=label)
     label_value = int(data['label'][sample_i])
     clean_pred = int(data['clean__prediction'][sample_i])
     attacked_pred = int(data[attack + '__prediction'][sample_i])
