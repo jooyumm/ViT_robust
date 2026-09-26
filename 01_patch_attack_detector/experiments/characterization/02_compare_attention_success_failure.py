@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize, PowerNorm
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / 'ground_truth'))   # for `import draw_boxes`
@@ -30,29 +30,13 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
 # 양 끝이 검정으로 가면 원본/공격/차이가 다 어두워져서 구분이 안 된다 -- 끝 색을 원색으로 둔다.
 # raw attention: 흰색 -> 순수 파랑. 차이: 감소=연초록->밝은 초록->진한 초록(#008000), 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
-SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', ['#ffffff', '#0000ff'])
+SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', [(0.0, '#ffffff'), (0.15, '#c8c8ff'), (1.0, '#0000ff')])
 # 0은 흰색. 흰색에서 바로 연한 초록/연한 빨강으로 건너뛴 뒤 원색으로 진해진다 -- 선형으로
-# 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다.
+# 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다. 값 스케일은 선형(눈금 간격 균일)으로 두고
+# 작은 값을 보이게 하는 건 색 램프 쪽에서 한다.
 DIVERGING = LinearSegmentedColormap.from_list('green_white_red', [
     (0.0, '#008000'), (0.3, '#00ff00'), (0.4, '#99ff99'), (0.5, '#ffffff'), (0.6, '#ff9999'), (0.7, '#ff0000'), (1.0, '#800000')])
 
-
-class SignedPowerNorm(Normalize):
-    """0을 중심으로 부호를 유지한 채 |값|^gamma로 펼친다(gamma<1이면 작은 변화도 흰색에서
-    확실히 떨어진다). 컬러바가 눈금을 되돌릴 수 있도록 inverse를 제공한다."""
-
-    def __init__(self, vmax, gamma=.5):
-        super().__init__(vmin=-vmax, vmax=vmax, clip=True)
-        self.gamma = gamma
-
-    def __call__(self, value, clip=None):
-        v = np.ma.asarray(value, dtype=float)
-        scaled = np.sign(v) * (np.clip(np.abs(v) / self.vmax, 0, 1) ** self.gamma)
-        return np.ma.masked_array(.5 + .5 * scaled, mask=np.ma.getmask(v))
-
-    def inverse(self, value):
-        s = 2 * np.asarray(value, dtype=float) - 1
-        return np.sign(s) * (np.abs(s) ** (1 / self.gamma)) * self.vmax
 METRICS = {'tv': 'Total variation', 'gt_delta': 'Attention change in GT region (pp)'}
 
 
@@ -202,8 +186,8 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
     axes[0, 2].set_axis_off()
 
     mass_max, delta_max = scales
-    mass_norm = PowerNorm(gamma=.45, vmin=0, vmax=mass_max)
-    delta_norm = SignedPowerNorm(delta_max)
+    mass_norm = Normalize(vmin=0, vmax=mass_max)
+    delta_norm = Normalize(vmin=-delta_max, vmax=delta_max)
     column_image = {}
     for row, layer_i in enumerate(layers, 1):
         panels = [('clean', 'Clean'), ('attacked', attack), ('delta', '(Attack − clean)')]
@@ -227,14 +211,8 @@ def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_
     for column, label, extend in [(0, 'Raw attention (%)', 'max'),
                                    (1, 'Raw attention (%)', 'max'),
                                    (2, 'Attack − clean (pp)', 'both')]:
-        bar = figure.colorbar(column_image[column], ax=[axes[r, column] for r in range(n_rows)],
-                              shrink=.85, extend=extend, label=label)
-        if column == 2:
-            # 눈금을 정수(1,2,3...)로 두면 |값|^0.5 스케일 때문에 양 끝 눈금이 겹친다 -- 상한의
-            # 비율로 잡으면 스케일 위에서 간격이 고르다.
-            ticks = np.array([-1, -.5, -.25, -.05, 0, .05, .25, .5, 1]) * delta_max
-            bar.set_ticks(ticks)
-            bar.set_ticklabels([f'{v:.2g}' for v in ticks])
+        figure.colorbar(column_image[column], ax=[axes[r, column] for r in range(n_rows)],
+                        shrink=.85, extend=extend, label=label)
     label_value = int(data['label'][sample_i])
     clean_pred = int(data['clean__prediction'][sample_i])
     attacked_pred = int(data[attack + '__prediction'][sample_i])
@@ -394,7 +372,7 @@ def main():
         'attacked/difference panels.\n'
         '- Raw attention: white -> pure blue. Attack-minus-clean: pure green (attention lost) -> '
         'white (no change) -> pure red (attention concentrated more). Ends are pure colors so panels stay '
-        'distinguishable at the extremes; small changes are stretched (signed power scale) so they stay visibly off-white. Both '
+        'distinguishable at the extremes; the color ramps jump quickly off white so small values stay visible, while the colorbars are linear with evenly spaced ticks. Both '
         'use a 99.5th-percentile cap (not the true max) shared across every block of a given '
         'attack, so a single extreme sample or patch can\'t blank out the rest, while the real '
         'block-to-block story (near-zero early on, then increasingly concentrated) still shows. '
