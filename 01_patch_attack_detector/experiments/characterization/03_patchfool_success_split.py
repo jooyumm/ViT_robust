@@ -8,14 +8,20 @@ patch가 받던 값의 FOCUS_RATIO(3)배 이상**이다. 순위(1등인가)는 �
 """
 import argparse
 import importlib.util
+import sys
 from pathlib import Path
 
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+# 02_compare_attention_success_failure.py는 파일명이 숫자로 시작해 보통 import 문으로 못 불러온다
+# -- load_paired_run/compute_metrics(이 실행의 데이터 검증·지표 계산, 02 고유 로직)만 이 방법으로 가져온다.
+# 그림 그리기(draw_maps/map_scales)는 둘 다 쓰는 공용 코드라 vis/에서 정상적으로 import한다.
 spec = importlib.util.spec_from_file_location('compare02', HERE / '02_compare_attention_success_failure.py')
 compare02 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(compare02)
+sys.path.insert(0, str(HERE.parents[1] / 'vis'))
+from attention_maps import draw_maps, map_scales   # noqa: E402
 
 ATTACK = 'patchfool'
 FOCUS_RATIO = 3
@@ -62,16 +68,16 @@ def main():
     failed = outcome == 0
 
     # 대표 예시: focused 집단에서 마지막 블록의 공격 패치 attention이 집단 중앙값에 가장 가까운 표본.
-    scales = compare02.map_scales(metrics, outcome)
+    scales = map_scales(metrics, outcome)
     focused_idx = np.flatnonzero(focused)
     pick_focused = int(focused_idx[np.argmin(np.abs(attacked_pct[focused_idx, last]
                                                     - np.median(attacked_pct[focused_idx, last])))])
     layers = list(range(manifest['n_layers']))
-    compare02.draw_maps(data, manifest, ATTACK, pick_focused, metrics, layers, scales,
+    draw_maps(data, manifest, ATTACK, pick_focused, metrics, layers, scales,
                         f'Attack succeeded · FOCUSED (>= {FOCUS_RATIO}x clean at block {last + 1})',
                         output / 'attack_success_focused.png')
     # focused 예시를 6·9·12 블록만 (12개 전부는 세로로 너무 길어서)
-    compare02.draw_maps(data, manifest, ATTACK, pick_focused, metrics, [5, 8, 11], scales,
+    draw_maps(data, manifest, ATTACK, pick_focused, metrics, [5, 8, 11], scales,
                         f'Attack succeeded · FOCUSED (>= {FOCUS_RATIO}x clean at block {last + 1})',
                         output / 'attack_success_focused_L6_L9_L12.png')
     print(f'focused example: sample {int(data["sample_index"][pick_focused])}')

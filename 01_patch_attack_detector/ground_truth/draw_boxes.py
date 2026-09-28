@@ -2,60 +2,29 @@
 ground_truth/draw_boxes.py — GT(coverage.gt_coverage, 픽셀 diff로 계산한 "공격이 실제로
 건드린 patch")를 원본/공격 이미지 위에 박스로 그려서 보여주는 그림 함수. attention이나
 탐지기 출력은 여기서 다루지 않는다 — 이 폴더의 역할은 정답 위치를 보여주는 것뿐이다.
+박스 그리는 원시 함수(격자·박스·색)는 vis/boxes.py에 있다 — 여기서는 GT 표시 방식(감싸는
+사각형 vs patch별 박스+퍼센트 라벨)만 결정한다.
 """
+import sys
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 
-from coverage import gt_patch_summary, PATCH_SIZE, PPL
+from coverage import gt_patch_summary
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'vis'))
+from boxes import draw_patch_box, draw_bbox, draw_patch_grid, CLEAN_BOX_COLOR, ATTACK_BOX_COLOR  # noqa: E402
 
 GROUP_LABELS = {'clean': 'Clean', 'patchfool': 'PatchFool', 'lavan': 'LaVAN'}
-# clean 패널은 파랑, 공격(patchfool/lavan) 패널은 전부 노랑 — clean도 박스를 지우지
-# 않는다(지우면 adv 패널과 같은 위치인지 비교하기 어려워진다), 색만 달라서 clean인지
-# 공격인지 한눈에 구분된다.
-CLEAN_BOX_COLOR = 'blue'
-ATTACK_BOX_COLOR = 'yellow'
 
 
 def _unnormalize(img):
     """(3,H,W) 정규화된 텐서 -> (H,W,3) [0,1] ndarray. dataset.py의 mean=std=0.5 규약."""
     disp = img * 0.5 + 0.5
     return np.clip(disp.transpose(1, 2, 0), 0, 1)
-
-
-def _draw_patch_grid(ax, ppl=PPL, patch_size=PATCH_SIZE):
-    for i in range(1, ppl):
-        ax.axhline(i * patch_size, color='white', lw=0.3, alpha=0.4)
-        ax.axvline(i * patch_size, color='white', lw=0.3, alpha=0.4)
-
-
-def draw_patch_box(ax, patch_idx, color, label=None, ppl=PPL, patch_size=PATCH_SIZE, lw=2.0, offset=0.0):
-    """patch_idx 위치에 박스 하나. 실제 사진(패널 원점이 0, patch_size=16 등 픽셀 단위)은
-    offset=0(기본값)을 쓰고, imshow 기본 extent로 그린 격자(칸 중심이 정수 좌표, patch_size=1)
-    처럼 반 칸 보정이 필요하면 offset=-.5를 넘긴다 -- 좌표계만 다를 뿐 같은 박스 하나를
-    그리는 로직이라 여기서 공유한다(01_patch_attack_detector/experiments/characterization의
-    attention map에서도 그대로 가져다 쓴다)."""
-    r, c = patch_idx // ppl, patch_idx % ppl
-    ax.add_patch(Rectangle((c * patch_size + offset, r * patch_size + offset), patch_size, patch_size,
-                            fill=False, edgecolor=color, lw=lw))
-    if label:
-        ax.text(c * patch_size + offset + 1, r * patch_size + offset + patch_size - 2, label,
-                color=color, fontsize=7, fontweight='bold', va='bottom')
-
-
-def _draw_bbox(ax, gt_patches, color, ppl=PPL, patch_size=PATCH_SIZE, lw=2.0):
-    """gt_patches(여러 patch에 걸친 GT)를 patch별로 따로따로가 아니라, 전부를 감싸는
-    사각형 하나로 그린다 — LaVAN처럼 겹친 patch가 여러 개면 patch 경계마다 박스를 치는
-    게 오히려 3x3 격자처럼 보여서 attack이 안 보인다는 피드백 반영."""
-    rows = [p // ppl for p, _ in gt_patches]
-    cols = [p % ppl for p, _ in gt_patches]
-    r0, r1 = min(rows), max(rows)
-    c0, c1 = min(cols), max(cols)
-    ax.add_patch(Rectangle((c0 * patch_size, r0 * patch_size),
-                            (c1 - c0 + 1) * patch_size, (r1 - r0 + 1) * patch_size,
-                            fill=False, edgecolor=color, lw=lw))
 
 
 def plot_gt_locations(clean_img, adv_img, gt_cov, group, out_path, label=None, gt_min_frac=0.01):
@@ -85,14 +54,14 @@ def plot_gt_locations(clean_img, adv_img, gt_cov, group, out_path, label=None, g
     for i, (ax, img, title, box_color) in enumerate(panels):
         cmap = None if img.ndim == 3 else 'hot'
         ax.imshow(img, cmap=cmap)
-        _draw_patch_grid(ax)
+        draw_patch_grid(ax)
         if gt_patches:
             if i == 2:   # diff: patch별 상세(경계 + 겹침 %)
                 for p, frac in gt_patches:
                     patch_label = f'{frac:.0%}' if show_pct else None
                     draw_patch_box(ax, p, box_color, label=patch_label)
             else:        # clean/adv: 감싸는 사각형 하나만
-                _draw_bbox(ax, gt_patches, box_color)
+                draw_bbox(ax, gt_patches, box_color)
         ax.set_xticks([]); ax.set_yticks([])
         ax.set_title(title, fontsize=10)
 

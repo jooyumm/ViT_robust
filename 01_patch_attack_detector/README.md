@@ -24,19 +24,35 @@ Dual-Gate 등), 두 번째 버전이 생기기 전에 미리 버전이 드러나
 ## 현재 디렉토리 구조
 
 ```text
+vis/                                     여러 스크립트가 같이 쓰는 그리기 코드 (박스, 색상표, attention 맵)
+  boxes.py                               patch 박스·격자 원시 함수, CLEAN/ATTACK_BOX_COLOR
+  colors.py                              attention 맵 순차·발산 색상표(SEQUENTIAL, DIVERGING)
+  attention_maps.py                      draw_maps/map_scales — clean/attack/차이 3열 맵
+
+detector/
+  topk_mass_v1.py                        다른 방어 프로젝트(02_patch_switch_defense)가 실제로 쓰는 배포본
+  lsw_v3.py                              Late-Surge Window — 후반 블록 급증 탐지 (v3 "탐지기" 절 참고)
+  rise_timing_v1.py                      LSW 보조 신호 — attention이 몰리는 시점 자체를 본다
+
+ground_truth/                            GT(실제 변경 patch) 계산·표시 도구, vis/boxes.py를 가져다 씀
+
 experiments/characterization/
   01_extract_paired_attention.py          동일 쌍의 이미지·예측·attention·GT 추출
   02_compare_attention_success_failure.py 성공/실패 비교, 전체 레이어 및 특이 레이어 분석
+  03_patchfool_success_split.py           PatchFool 성공 안에서 몰린/안 몰린 사례 비교
 
-detector/topk_mass_v1.py                  다른 방어 프로젝트에서 사용하는 공유 탐지기
-ground_truth/                            GT 계산·표시 도구
+experiments/detector_eval/
+  compare_detectors.py                   v1/v3/ARMOR 재구현/Occlusion/픽셀 기준선을 같은 프로토콜로 비교
+  adaptive_attack.py                     탐지기를 아는 공격자 시뮬레이션
+  check_lsw_v3.py, check_rise_timing_v1.py  실제 배포 방식(fit/보정 -> 다른 run에서 detect) 확인
+
 results/characterization/
-  attention_comparison/<run>/            현재 실험의 실행별 데이터와 분석 결과
-  ...                                   과거 결과 (현재 실험의 입력으로 사용하지 않음)
+  attention_comparison/<run>/            실행별 원본(manifest.json, data/) — 재현에 필요한 것만
+  patchfool/, lavan/                     사람이 보는 요약 (02/03이 매번 덮어씀)
+results/detector_eval/                   탐지기 비교 그림
 ```
 
-모델·데이터셋·공격 구현은 저장소 루트의 `src/`를 사용한다. 탐지기와 GT 도구는
-`characterization` 정리 범위 밖의 별도 기능이다. `ground_truth/visualize_gt.py`는 과거
+모델·데이터셋·공격 구현은 저장소 루트의 `src/`를 사용한다. `ground_truth/visualize_gt.py`는 과거
 NPZ 예시를 직접 읽으며 현재 실험 코드에 의존하지 않는다.
 
 ## 공격 전후 attention과 성공/실패 비교: 동일 이미지의 공격 전후 attention과 공격 성공/실패 비교
@@ -118,9 +134,13 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 안 되어서 끝 색을 원색으로 뒀다. 색 범위는 같은 공격의 12레이어 전체를 모아 계산한
 99.5퍼센타일 상한을 쓴다 — 극단적인 표본 하나가 스케일을 지배하지 않게 하면서도, 초반은 옅고
 후반으로 갈수록 진해지는 실제 변화는 그대로 드러난다. 상한을 넘는 값은 컬러바의 화살표로
-표시하고 맨 끝 색으로 그린다(값 자체를 바꾸지 않는다). GT 토큰 테두리는 `ground_truth/draw_boxes.py`의
-규약을 그대로 따른다 — clean 패널은 파랑(`CLEAN_BOX_COLOR`), 공격 후/차이 패널은 노랑
-(`ATTACK_BOX_COLOR`). 박스 그리는 `draw_patch_box`와 색 상수를 거기서 import해서 쓴다.
+표시하고 맨 끝 색으로 그린다(값 자체를 바꾸지 않는다). GT 토큰 테두리는 `vis/boxes.py`의 규약을
+그대로 따른다 — clean 패널은 파랑(`CLEAN_BOX_COLOR`), 공격 후/차이 패널은 노랑(`ATTACK_BOX_COLOR`).
+박스·격자 그리는 함수와 색 상수, attention 맵의 색상표(`vis/colors.py`), 맵 그리기 자체
+(`draw_maps`/`map_scales`, `vis/attention_maps.py`)는 전부 `vis/`에 모여 있고 `ground_truth/draw_boxes.py`,
+이 스크립트, `03_patchfool_success_split.py`가 똑같이 가져다 쓴다 — 예전에는 02 안에 있던 그리기
+코드를 03이 파일 경로로 직접 불러다 썼는데(파일명이 숫자로 시작해 import 문을 못 써서 생긴 임시방편),
+지금은 03도 `vis/`에서 정상 import한다.
 
 - **TV**: CLS를 포함한 `0.5 × Σ|attack − clean|`. 맵 전체의 변화 크기.
 - **GT 증감**: coverage > 0인 토큰으로 들어가는 raw attention의 변화량 합.
@@ -229,3 +249,40 @@ result = detector.detect(images)   # alarm, score, patches(의심 3x3 창의 pat
 오분류에 성공한 공격 탐지 PatchFool 72%(242장)·LaVAN 68%(265장), 경보가 울린 이미지에서 의심 창이 실제 공격
 patch와 겹친 비율 98%·99%. 한계는 위 v2 절과 같다: 적응형 공격에 뚫리고, PatchFool은 픽셀 검사가 더 잘 잡으며,
 ViT-B/16·2% 면적 패치 기준이다.
+
+## LSW 보조 신호: 몰리는 시점 — `detector/rise_timing_v1.py`
+
+지도교수 제안: "그래프 경향성 자체가 원본에서는 안 보이는 값이면, 그 경향성을 탐지하면 되지 않냐"는 아이디어에서
+출발했다. LSW는 "얼마나 몰리는지"(크기)만 보는데, "언제 몰리는지"(시점) 자체도 정상에서는 거의 안 보이는
+값이었다: 정상 이미지에서 CLS가 최종적으로 가장 많이 보는 patch는 거의 항상(500장 중 495장) 7~8번 블록까지
+자기 최종 attention의 절반에 도달하는데, 공격받은 patch는 그 자리를 10~11번 블록에야 차지한다.
+
+**주의 — 미리 본 수치는 GT(실제 공격 위치)를 안다고 가정한 것이었다.** 실제 탐지기처럼 GT 없이 스스로
+patch를 찾게 하면 성능이 크게 떨어진다:
+
+| 방식 | PatchFool AUROC | LaVAN AUROC |
+|---|---|---|
+| GT patch만 봄(오라클, 실전 불가능) | 0.90 | 0.75 |
+| 12번 블록 attention 최대 patch 하나(자동) | 0.80 | 0.60 |
+| 3x3 창 합(자동, 여러 patch 공격 대응) | 0.73 | 0.72 |
+| LSW가 고른 창을 재사용 | 무의미(정상에서도 이미 편향돼 임계값이 12로 붙음) | 〃 |
+| **LSW(비교 기준)** | **0.88** | **0.85** |
+
+**혼자 쓰면 LSW보다 약하다.** "LSW가 고른 창을 재사용"이 특히 중요한 교훈이다 — 탐지 기준(후반 급증)으로
+고른 위치에 같은 종류의 확인(시점)을 또 하면, 정상 이미지에서도 그 위치는 이미 극단값(144개 창 중 최댓값)이라
+편향돼서 구분이 안 된다. **탐지에 쓴 기준과 확인에 쓴 기준은 독립적이어야 한다.**
+
+그래서 `rise_timing_v1.py`는 독립적인 방법(12번 블록 attention이 최대인 patch 하나, 자동 선택)을 쓰고,
+**LSW의 보조 신호로만** 쓴다. 각자 정상 이미지로 5% FPR 임계값을 따로 정하고 OR로 묶는다
+(`check_rise_timing_v1.py`가 이 프로토콜을 그대로 실행한다):
+
+seed 21(500쌍), LSW로 이미 보정된 임계값에 이 신호를 추가하면 — PatchFool 탐지 72.3%→75.6%(LSW가 놓친
+67장 중 8장 추가), LaVAN 68.3%→69.1%(84장 중 2장). 결합 오탐률은 4.8%→5.0%.
+
+```python
+timing = RiseTimingDetector(model); timing.fit(clean_images, fpr=0.05)
+alarm = lsw_result['alarm'] | timing.detect(images)['alarm']
+```
+
+한계: PatchFool에서만 눈에 띄는 개선이고 LaVAN은 거의 안 오른다(여러 patch에 퍼지는 공격이라 patch 하나만
+보는 이 방식이 불리하다). 적응형 공격 테스트는 아직 안 했다.

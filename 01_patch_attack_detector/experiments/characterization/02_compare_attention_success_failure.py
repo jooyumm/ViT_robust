@@ -15,11 +15,10 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, Normalize
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[1] / 'ground_truth'))   # for `import draw_boxes`
-from draw_boxes import draw_patch_box, CLEAN_BOX_COLOR, ATTACK_BOX_COLOR   # noqa: E402 -- GT 박스는 여기서 그대로 가져다 쓴다
+sys.path.insert(0, str(HERE.parents[1] / 'vis'))
+from attention_maps import draw_maps, map_scales, save_figure   # noqa: E402
 
 MASS_ATOL = 1e-4
 # 결과 이름 자체가 "무엇이 성공/실패했는지"를 말하게 한다 -- "failure"만 보면 공격이
@@ -28,15 +27,6 @@ OUTCOMES = {'attack_success': (1, 'Attack succeeded (misclassified)'),
             'attack_fail': (0, 'Attack failed (still correct)')}
 # 방어 관점에서 공격 성공=critical, 실패=good인 상태 색 사용 -- 이름의 의미와 색이 서로 확인해준다.
 OUTCOME_COLORS = {'attack_success': '#d03b3b', 'attack_fail': '#0ca30c'}
-# 양 끝이 검정으로 가면 원본/공격/차이가 다 어두워져서 구분이 안 된다 -- 끝 색을 원색으로 둔다.
-# raw attention: 흰색 -> 순수 파랑. 차이: 감소=연초록->밝은 초록->진한 초록(#008000), 0=흰색, 증가(attention이 더 몰림)=순수 빨강.
-SEQUENTIAL = LinearSegmentedColormap.from_list('white_blue', [(0.0, '#ffffff'), (0.05, '#d0d0ff'), (0.2, '#8080ff'), (1.0, '#0000ff')])
-# 0은 흰색. 흰색에서 바로 연한 초록/연한 빨강으로 건너뛴 뒤 원색으로 진해진다 -- 선형으로
-# 흰색->원색을 이으면 작은 변화가 흰색과 구분이 안 된다. 값 스케일은 선형(눈금 간격 균일)으로 두고
-# 작은 값을 보이게 하는 건 색 램프 쪽에서 한다.
-DIVERGING = LinearSegmentedColormap.from_list('green_white_red', [
-    (0.0, '#008000'), (0.3, '#00ff00'), (0.425, '#66ff66'), (0.475, '#ccffcc'), (0.5, '#ffffff'),
-    (0.525, '#ffcccc'), (0.575, '#ff6666'), (0.7, '#ff0000'), (1.0, '#800000')])
 
 METRICS = {'tv': 'Total variation', 'gt_delta': 'Attention change in GT region (pp)'}
 
@@ -136,107 +126,14 @@ def compute_metrics(clean_heads, attacked_heads, coverage):
     }
 
 
-def save_figure(figure, path):
-    figure.savefig(path, dpi=160, bbox_inches='tight')
-    plt.close(figure)
 
 
-def draw_gt(axis, coverage, side, color):
-    """부분적으로라도 변경된 토큰에 테두리를 표시한다 -- ground_truth/draw_boxes.py의
-    draw_patch_box를 그대로 쓴다. draw_boxes.py와 같은 규약: clean 패널은 CLEAN_BOX_COLOR(파랑),
-    공격 후/차이 패널은 ATTACK_BOX_COLOR(노랑). 이 맵은 imshow 기본 extent(칸 중심이 정수
-    좌표)라 patch_size=1, offset=-.5로 반 칸 보정한다."""
-    for patch_i in np.flatnonzero(coverage > 0):
-        draw_patch_box(axis, int(patch_i), color, ppl=side, patch_size=1, lw=1.2, offset=-.5)
 
 
-def robust_scale(values, percentile=99):
-    """단일 극단값이 색 범위를 지배하지 않도록 백분위수로 vmax를 잡는다.
-    이보다 큰 값은 색이 잘리며(colorbar의 extend로 표시), 실제 값이 바뀌지는 않는다."""
-    finite = np.abs(values[np.isfinite(values)])
-    return float(np.percentile(finite, percentile)) if finite.size else 1e-8
 
 
-def map_scales(metrics, outcome):
-    """맵 색 범위(퍼센트 포인트 단위). 같은 공격의 모든 clean 정답 표본·전 레이어에서 잡는다."""
-    valid = outcome >= 0
-    mass_max = robust_scale(100 * np.concatenate([metrics['clean'][valid, :, 1:],
-                                                    metrics['attacked'][valid, :, 1:]]),
-                            percentile=99.5)
-    delta_max = robust_scale(100 * metrics['delta'][valid, :, 1:], percentile=99.5)
-    return max(mass_max, 1e-8), max(delta_max, 1e-8)
 
 
-def draw_maps(data, manifest, attack, sample_i, metrics, layers, scales, status_label, output):
-    """clean/attack 사진 + GT coverage를 첫 행에, 이후 지정한 레이어만 clean/attack/차이로 그린다.
-    모든 행(사진 포함)이 같은 3열 grid를 쓰고, 컬러바는 열 전체(사진 행 포함)에서 폭을
-    빌려 배치한다 -- 그래야 컬러바가 붙는 마지막 레이어 행만 폭이 줄어 다른 행과 어긋나
-    보이는 문제가 생기지 않는다."""
-    sample_id = int(data['sample_index'][sample_i])
-    coverage = data[attack + '__gt_coverage'][sample_i]
-    side = int(np.sqrt(len(coverage)))
-    if side * side != len(coverage):
-        raise ValueError('현재 맵은 정사각 patch 격자를 지원합니다.')
-    n_rows = len(layers) + 1
-    # 열 순서: Clean | Attack | raw 컬러바 | 차이 | 차이 컬러바. 컬러바를 이미지 열에서 폭을 빌려
-    # 붙이면 열마다 폭이 달라져 어긋나므로, 컬러바는 전용 열에 두고 같은 길이·같은 높이로 놓는다.
-    figure = plt.figure(figsize=(12.6, 2.9 * n_rows), layout='constrained')
-    grid = figure.add_gridspec(n_rows, 5, width_ratios=[1, 1, .3, 1, .3])
-    image_grid_col = [0, 1, 3]
-    axes = np.array([[figure.add_subplot(grid[r, image_grid_col[c]]) for c in range(3)] for r in range(n_rows)])
-    mean = np.asarray(manifest['mean'])[:, None, None]
-    std = np.asarray(manifest['std'])[:, None, None]
-    extent = [-.5, side - .5, side - .5, -.5]
-
-    clean_img = np.clip((data['clean__images'][sample_i] * std + mean).transpose(1, 2, 0), 0, 1)
-    attack_img = np.clip((data[attack + '__images'][sample_i] * std + mean).transpose(1, 2, 0), 0, 1)
-    top_panels = [(0, clean_img, 'Clean', CLEAN_BOX_COLOR), (1, attack_img, attack, ATTACK_BOX_COLOR)]
-    for column, image, title, box_color in top_panels:
-        axis = axes[0, column]
-        axis.imshow(image, extent=extent)
-        draw_gt(axis, coverage, side, box_color)
-        axis.set_title(title)
-        axis.set_xticks([])
-        axis.set_yticks([])
-    # 차이 열의 첫 행은 비워 둔다(칸은 남겨야 컬러바가 열 전체에서 같은 폭을 빌려 행이 어긋나지 않는다).
-    axes[0, 2].set_axis_off()
-
-    mass_max, delta_max = scales
-    mass_norm = Normalize(vmin=0, vmax=mass_max)
-    delta_norm = Normalize(vmin=-delta_max, vmax=delta_max)
-    column_image = {}
-    for row, layer_i in enumerate(layers, 1):
-        panels = [('clean', 'Clean'), ('attacked', attack), ('delta', '(Attack − clean)')]
-        for column, (key, title) in enumerate(panels):
-            axis = axes[row, column]
-            values = metrics[key][sample_i, layer_i, 1:].reshape(side, side) * 100
-            if key == 'delta':
-                image = axis.imshow(values, cmap=DIVERGING, norm=delta_norm, interpolation='nearest')
-            else:
-                image = axis.imshow(values, cmap=SEQUENTIAL, norm=mass_norm, interpolation='nearest')
-            column_image[column] = image
-            draw_gt(axis, coverage, side, CLEAN_BOX_COLOR if key == 'clean' else ATTACK_BOX_COLOR)
-            axis.set_title(f'L{layer_i + 1} · {title}')
-            axis.set_xticks([])
-            axis.set_yticks([])
-            if key == 'delta':
-                gt_gain = metrics['gt_delta'][sample_i, layer_i] * 100
-                cls_gain = metrics['cls_delta'][sample_i, layer_i] * 100
-                axis.set_xlabel(f'GT {gt_gain:+.2f} pp | CLS {cls_gain:+.2f} pp', fontsize=8)
-    # raw(파랑)는 Clean/Attack이 같은 스케일이라 하나만 두고, 차이 컬러바와 길이·위치를 맞춘다.
-    # 12개 레이어 그림은 짧게(그림 가운데쯤), 레이어 몇 개만 그린 그림은 행 전체 높이로 길게 둔다.
-    bar_box = [.1, .064, .35, .928] if len(layers) <= 4 else [.1, .42, .35, .22]
-    for grid_col, image, label, extend in [(2, column_image[0], 'Raw attention (%)', 'max'),
-                                             (4, column_image[2], '(Attack − clean) (pp)', 'both')]:
-        holder = figure.add_subplot(grid[1:, grid_col])
-        holder.set_axis_off()
-        figure.colorbar(image, cax=holder.inset_axes(bar_box), extend=extend, label=label)
-    label_value = int(data['label'][sample_i])
-    clean_pred = int(data['clean__prediction'][sample_i])
-    attacked_pred = int(data[attack + '__prediction'][sample_i])
-    figure.suptitle(f'{attack} · sample {sample_id} · {status_label}\n'
-                   f'label {label_value} | prediction {clean_pred} → {attacked_pred}', fontsize=13)
-    save_figure(figure, output)
 
 
 def draw_layer_comparison(attack, metrics, outcome, output):
