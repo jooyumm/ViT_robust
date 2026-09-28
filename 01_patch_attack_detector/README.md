@@ -156,7 +156,10 @@ CLS 변화량은 별도로 표시한다. 사진 행을 포함한 모든 행이 �
 "layer 7 activated / 9~10 polluted"는 ViT-B/32의 Sealyham 이미지 한 장(Figure 4)의 예시이며, 모든 모델·이미지에
 적용되는 규칙으로 서술된 것이 아니다.
 
-## 탐지기 v2: Late-Surge Window (LSW) — `detector/emergent_window_v2.py`
+## 탐지기 v2 개발 과정: Late-Surge Window (LSW)를 고른 근거
+
+아래는 v3(`detector/lsw_v3.py`)를 고르기까지의 설계·평가 과정이다. 이 절에서 언급하는 `emergent_window_v2.py`,
+`value_outlier_v2.py`는 점수 정의를 v3로 그대로 옮긴 뒤 삭제했다 — 지금 저장소에는 없다.
 
 **먼저 알아야 할 것 (평가 타당성)**: 공유 PatchFool은 기본이 픽셀 범위 제한 없는 공격이라 공격 이미지의 100%가 유효 범위
 [-1,1] 밖의 픽셀을 갖고(정상 0%), 모델 없이 "범위 이탈" 한 줄로 AUROC 1.000, 국소 변화량 최댓값으로도 1.000이 나온다.
@@ -183,7 +186,7 @@ AUROC는 표본 부트스트랩 95% CI)로 비교한다. 비교 대상은 이 �
 | ARMOR-scan | 0.50 / 5% | 0.53 / 9% | 1 |
 | Occlusion (36 마스크) | 0.91 / 23% | 0.92 / 32% | 37 |
 | **LSW** | 0.86 / 64% | 0.85 / 67% | 1 |
-| Value 거리 (`value_outlier_v2.py`) | - | 0.72 / 36% | 1 |
+| Value 거리(개발 중 시험, 삭제됨) | - | 0.72 / 36% | 1 |
 | LSW OR Value | - | 0.86 / 66% | 1 |
 
 PatchFool은 위 경고와 함께 본다. 유효 범위로 제한한 seed 21(성공 242장)에서 LSW 0.88 / 72%, v1 0.60 / 15%,

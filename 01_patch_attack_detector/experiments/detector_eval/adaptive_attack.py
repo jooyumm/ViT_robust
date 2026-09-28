@@ -37,7 +37,7 @@ def load_module(name, path):
 
 compare02 = load_module('compare02', HERE.parents[0] / 'characterization' / '02_compare_attention_success_failure.py')
 cmp = load_module('cmp', HERE / 'compare_detectors.py')
-import emergent_window_v2 as lsw   # noqa: E402
+import lsw_v3 as lsw               # noqa: E402
 
 PATCH = 16
 GRID = 14

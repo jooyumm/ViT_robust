@@ -1,4 +1,7 @@
-"""v3(detector/lsw_v3.py) 확인: (1) v2와 점수가 같은지, (2) "정상 이미지로 한 번 보정 -> 다른 run에서 평가"하는 배포 방식의 오탐률/탐지율.
+"""v3(detector/lsw_v3.py) 확인: "정상 이미지로 한 번 보정 -> 다른 run에서 평가"하는 배포 방식의 오탐률/탐지율.
+
+v3의 점수 정의가 이전 v2(emergent_window_v2.py, 삭제됨)와 동일하다는 것은 README "탐지기 v3" 절에 남긴 검증
+결과로 이미 확인됐다. 이 스크립트는 그 비교가 아니라 실제 배포 방식(fit/detect)의 동작만 확인한다.
 
 보정: --calibration_run의 clean 이미지로 fit(fpr=5%). 평가: --run의 clean(오탐률)과 오분류에 성공한 공격(탐지율, 위치 적중).
 """
@@ -17,7 +20,6 @@ sys.path.insert(0, str(HERE.parents[1] / 'detector'))
 spec = importlib.util.spec_from_file_location('compare02', HERE.parents[0] / 'characterization' / '02_compare_attention_success_failure.py')
 compare02 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(compare02)
-import emergent_window_v2 as v2   # noqa: E402
 import lsw_v3 as v3               # noqa: E402
 
 
@@ -33,12 +35,6 @@ def main():
 
     _, calib = compare02.load_paired_run(args.calibration_run)
     manifest, data = compare02.load_paired_run(args.run)
-
-    images = torch.from_numpy(data['clean__images'][:20]).to(device)
-    rows = v3.cls_patch_rows(model, images)
-    assert torch.equal(v3.surge_score(rows), v2.surge_score(rows)), 'v3 점수가 v2와 다릅니다'
-    assert torch.equal(v3.suspect_patches(rows), v2.suspect_patches(rows)), 'v3 위치가 v2와 다릅니다'
-    print('v3 점수·위치가 v2와 완전히 같음(앞 20장)')
 
     detector = v3.LSWDetector(model)
     threshold = detector.fit(torch.from_numpy(calib['clean__images']), fpr=0.05)

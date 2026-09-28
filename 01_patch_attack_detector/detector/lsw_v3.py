@@ -1,10 +1,11 @@
 """
 detector/lsw_v3.py — v3: Late-Surge Window(LSW)를 배포용 하나의 탐지기로 정리한 것.
 
-v2(emergent_window_v2.py)와 점수 정의가 **똑같다**(새로 튜닝하지 않았다, check_lsw_v3.py가 v2와 같은 점수임을
-확인한다). 달라진 것은 (1) 정상 이미지로 임계값을 정하는 fit(), (2) 경보·점수·의심 위치를 함께 돌려주는 detect(),
-(3) 이 파일 하나로 자기완결이라는 점이다. v1(topk_mass_v1.py)은 그대로 둔다(02_patch_switch_defense가 쓰는 배포본).
-value 이상치 경로(value_outlier_v2.py)와 결합은 새 시드에서 이득이 재현되지 않아 v3에 넣지 않았다.
+개발 중이던 v2(emergent_window_v2.py, 점수 정의를 검증한 뒤 삭제됨)와 점수 정의가 똑같다(새로 튜닝하지
+않았다) — README "탐지기 v3" 절에 그 검증 결과를 남겼다. 여기서 달라진 것은 (1) 정상 이미지로 임계값을 정하는
+fit(), (2) 경보·점수·의심 위치를 함께 돌려주는 detect(), (3) 이 파일 하나로 자기완결이라는 점이다.
+v1(topk_mass_v1.py)은 그대로 둔다(02_patch_switch_defense가 쓰는 배포본). 개발 중 함께 시험한 value 이상치
+경로(head-합 ||v-o||^2 z-보정)와의 결합은 새 시드에서 이득이 재현되지 않아 v3에 넣지 않았다.
 
 점수: 모든 3x3 patch 창에 대해 max( mean_{블록 10,11,12} 창합 - max_{블록 7,8,9} 창합 ). CLS query attention 행만
 쓰고(head 평균, patch 위에서 합 1로 재정규화) forward 한 번, 학습 없음, 정상 이미지로 임계값만 정한다.
@@ -80,6 +81,12 @@ def suspect_patches(rows):
     r, c = best // k, best % k
     offsets = torch.tensor([dr * GRID + dc for dr in range(WINDOW) for dc in range(WINDOW)], device=rows.device)
     return (r * GRID + c).unsqueeze(1) + offsets.unsqueeze(0)
+
+
+@torch.no_grad()
+def detection_score(model, images):
+    """images (B,3,H,W) -> 이상치 점수 (B,). 배치 하나짜리 간단 호출용(반복 평가는 LSWDetector.score 사용)."""
+    return surge_score(cls_patch_rows(model, images))
 
 
 class LSWDetector:
