@@ -1,264 +1,191 @@
+"""Patch-Fool 기본 공격의 timm ViT 적용판.
+
+공식 구현: https://github.com/GATECH-EIC/Patch-Fool/blob/main/main.py
+기본: incoming attention 위치 선택 → 유효 범위의 무작위 패치로 교체 → Adam(CE+attention).
+모델은 src.models에서 별도로 로드한다. 공격이 모델 가중치를 학습하지 않는다.
+
+선택 가능한 변형은 아래 함수 파라미터만 바꾼다. Contiguous/고정 Sparse와 CLS 선택은
+이 저장소의 확장이다. Sparse의 학습형 mask·Mild L2는 구현하지 않았다. 공식 PCGrad의
+기본 PCGrad는 기존 norm²을 유지한다. pcgrad_mode="official"이면 공식 norm 분모를 사용한다.
+공식 DeiT 대신 timm ViT를 쓰므로 모델·전처리까지 포함한 공식 실험 전체 재현은 아니다.
+"""
+from contextlib import nullcontext
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
+from ..attack_utils import attack_context, attention_terms
 
 
-def _clamp(x, lower, upper):
-    return torch.max(torch.min(x, upper), lower)
-
-
-def _pcgrad(atten_grad_flat, ce_grad_flat, cos_sim, original_shape):
-    """PCGrad: 논문 utils.py 그대로."""
-    pcgrad = atten_grad_flat.clone()
+def _pcgrad(atten_grad_flat, ce_grad_flat, cos_sim, original_shape, mode="projected"):
+    """CE와 충돌하는 attention gradient 성분만 제거한다."""
+    projected = atten_grad_flat.clone()
     conflict = cos_sim < 0
-    if conflict.any():
-        g_a = pcgrad[conflict]
-        g_c = ce_grad_flat[conflict]
-        dot  = (g_a * g_c).sum(dim=-1, keepdim=True)
-        norm = g_c.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-        pcgrad[conflict] = g_a - (dot / norm) * g_c
-    return pcgrad.view(original_shape)
+    a, c = projected[conflict], ce_grad_flat[conflict]
+    if mode not in ("projected", "official"):
+        raise ValueError("PCGrad mode는 projected 또는 official이어야 합니다.")
+    denominator = c.norm(dim=-1, keepdim=True).clamp_min(1e-8) if mode == "official" else c.square().sum(-1, keepdim=True).clamp_min(1e-12)
+    projected[conflict] = a - (a*c).sum(-1, keepdim=True) / denominator * c
+    return projected.view(original_shape)
 
 
-def _make_attn_hook(weights_list):
-    """
-    timm Attention 모듈의 forward hook.
-    input[0] = norm1(x) shape (B, seq, dim)
-    """
-    def hook(module, input, output):
-        with torch.no_grad():
-            x = input[0]                          # (B, N, C)
-            B, N, C = x.shape
-            qkv = module.qkv(x)                   # (B, N, 3*C)
-            qkv = qkv.reshape(B, N, 3, module.num_heads,
-                               C // module.num_heads).permute(2, 0, 3, 1, 4)
-            q, k, _ = qkv.unbind(0)               # (B, heads, N, head_dim)
-            attn = (q @ k.transpose(-2, -1)) * module.scale
-            attn = attn.softmax(dim=-1)            # (B, heads, N, N)
-            weights_list.append(attn.detach().cpu())
-    return hook
+def _attention(q, k, scale):
+    return ((q * scale) @ k.transpose(-2, -1)).softmax(-1)
 
 
-def _collect_attn(model):
-    """hook 등록 → forward → hook 해제 → attn_weights 반환.
-    no_grad+detach라서 patch 선택(1회, gradient 불필요)에만 쓴다 — attack_mode='Attention'
-    루프 안에서는 절대 쓰면 안 됨(_collect_attn_grad 참고)."""
-    weights = []
-    hooks   = []
-    for blk in model.blocks:
-        hooks.append(blk.attn.register_forward_hook(_make_attn_hook(weights)))
-    return weights, hooks
-
-
-def _make_attn_hook_grad(weights_list):
-    """_make_attn_hook의 미분 가능 버전 — no_grad/detach 없이 그대로 그래프에 남겨서
-    delta까지 backward가 이어지게 한다. attack_mode='Attention'이 매 iteration마다
-    attention 손실의 gradient를 delta에 대해 직접 구해야 하므로(PatchFool 원 논문 코드는
-    모델 forward가 attention을 직접 반환해서 이 문제가 없는데, 여기서는 timm 모델을 그대로
-    쓰다 보니 hook으로 가로채야 해서 미분 가능한 버전을 따로 둔다) 이 함수가 필요하다."""
-    def hook(module, input, output):
-        x = input[0]                          # (B, N, C)
-        B, N, C = x.shape
-        qkv = module.qkv(x)                   # (B, N, 3*C)
-        qkv = qkv.reshape(B, N, 3, module.num_heads,
-                           C // module.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, _ = qkv.unbind(0)               # (B, heads, N, head_dim)
-        attn = (q @ k.transpose(-2, -1)) * module.scale
-        attn = attn.softmax(dim=-1)            # (B, heads, N, N) -- 그래프 유지, GPU에 둠
-        weights_list.append(attn)
-    return hook
-
-
-def _collect_attn_grad(model):
-    """_collect_attn의 미분 가능 버전. attack_mode='Attention' 루프 안에서만 쓴다."""
-    weights = []
-    hooks   = []
-    for blk in model.blocks:
-        hooks.append(blk.attn.register_forward_hook(_make_attn_hook_grad(weights)))
-    return weights, hooks
-
-
-def _select_patch_attn(attn_weights, layer_idx, num_patch, device):
-    """
-    Attention map에서 상위 num_patch 인덱스 반환.
-    CLS → 각 패치로 가는 attention row 사용 (column 0, row 1:)
-    """
-    # attn_weights[layer_idx]: (B, heads, N, N), N = 1+patches
-    a = attn_weights[layer_idx].to(device)  # (B, heads, N, N)
-    # CLS 토큰(row 0)이 각 패치(col 1:)에 주는 attention
-    a = a.mean(dim=1)[:, 0, 1:]            # (B, num_patches)
-    return a.argsort(descending=True)[:, :num_patch]  # (B, num_patch)
-
-
-def _select_contiguous_block(attn_weights, layer_idx, patch_size_model, H, device,
-                             ref_patch_size=16):
-    """
-    개별 상위 attention 패치가 아니라, ref_patch_size(기본 16px) 하나와 정확히 같은
-    물리적 영역을 덮는 block x block 개의 인접 패치를 고른다 (block = ref_patch_size // patch_size_model).
-    각 후보 블록의 attention 합이 가장 큰 블록을 선택 — "면적은 같지만 뭉쳐있는" 버전.
-    Returns: (B, block**2) 패치 인덱스 텐서 — _select_patch_attn과 같은 포맷
-    """
-    a = attn_weights[layer_idx].to(device).mean(dim=1)[:, 0, 1:]   # (B, num_patches)
-    ppl   = H // patch_size_model                # patches per line
-    block = ref_patch_size // patch_size_model    # 한 변에 들어가는 패치 수
-    assert ppl % block == 0, \
-        f"ppl({ppl})이 block({block})으로 안 나눠떨어짐 — ref_patch_size 확인 필요"
-
-    B = a.shape[0]
-    grid = a.view(B, ppl, ppl)
-    n_blocks = ppl // block
-    # block x block 단위로 attention 합산 → 블록별 점수
-    block_scores = grid.unfold(1, block, block).unfold(2, block, block)  # (B, n_blocks, n_blocks, block, block)
-    block_scores = block_scores.sum(dim=(-1, -2))                        # (B, n_blocks, n_blocks)
-    best_block   = block_scores.reshape(B, -1).argmax(dim=1)  # (B,)
-    block_row    = best_block // n_blocks
-    block_col    = best_block % n_blocks
-
-    offsets = torch.tensor(
-        [(dr, dc) for dr in range(block) for dc in range(block)], device=device)  # (block**2, 2)
-    rows = block_row.unsqueeze(1) * block + offsets[:, 0].unsqueeze(0)  # (B, block**2)
-    cols = block_col.unsqueeze(1) * block + offsets[:, 1].unsqueeze(0)  # (B, block**2)
-    return rows * ppl + cols
-
-
-def _build_mask(max_patch_index, B, H, patch_size, device):
-    """선택된 패치 위치에 1인 spatial mask (B, 1, H, W)."""
-    ppl  = H // patch_size   # patches per line
-    mask = torch.zeros(B, 1, H, H, device=device)
-    for b in range(B):
-        for idx in max_patch_index[b]:
-            row = (idx // ppl) * patch_size
-            col = (idx  % ppl) * patch_size
-            mask[b, :, row:row+patch_size, col:col+patch_size] = 1.0
-    return mask
+def _select_patches(attention, logits, images, labels, patch_size, count, method, source):
+    """위치 선택만 담당한다. 공격 최적화는 모든 방법에서 동일하다."""
+    batch, _, height, _ = images.shape
+    side = height // patch_size
+    if method == 'Rand':
+        return torch.from_numpy(np.random.randint(0, side*side, (batch, count))).to(images.device)
+    if method == 'Saliency':
+        grad = torch.autograd.grad(F.cross_entropy(logits, labels), images)[0]
+        scores = F.avg_pool2d(grad.abs().sum(1, keepdim=True), patch_size, patch_size).flatten(1)
+    else:
+        a = attention.mean(1)
+        scores = a.mean(-2)[:, 1:] if source == 'incoming' else a[:, 0, 1:]
+    if method != 'Contiguous':
+        return scores.argsort(descending=True)[:, :count]
+    block = 16 // patch_size  # P16 1개와 같은 면적: P8이면 2×2 토큰
+    if block < 1 or 16 % patch_size or side % block:
+        raise ValueError('Contiguous는 16px 영역을 모델 patch 격자로 나눌 수 있어야 합니다.')
+    sums = scores.reshape(batch, side, side).unfold(1, block, block).unfold(2, block, block).sum((-1, -2))
+    index = sums.flatten(1).argmax(-1); blocks_per_side = side // block
+    dr, dc = torch.meshgrid(torch.arange(block, device=images.device), torch.arange(block, device=images.device), indexing='ij')
+    return ((index // blocks_per_side)[:, None]*block + dr.flatten())*side + (index % blocks_per_side)[:, None]*block + dc.flatten()
 
 
 def patch_fool_attack(
-    model,
-    images,
-    labels,
-    device,
-    patch_size_model=16,
-    num_patch=1,
-    attack_mode='Attention',      # 'Attention' | 'CE_loss'
-    patch_select='Attn',          # 'Attn' | 'Rand' | 'Contiguous'
-    attn_layer_idx=4,
-    train_attack_iters=250,
-    attack_lr=0.22,
-    step_size=10,
-    gamma=0.95,
-    atten_loss_weight=0.002,
-    mild_l_inf=0.0,
-    clip_valid_range=False,       # True: 패치 픽셀을 정규화 공간 [-1,1](=유효 이미지 범위)로 매 step 잘라낸다
+    model, images, labels, device,
+    patch_size_model=16,       # 공격 대상 모델의 patch 크기: 8 / 16
+    num_patch=1,              # 변경할 token 수. Contiguous에서는 16×16px 면적으로 결정
+    attack_mode='Attention',  # Attention: CE+attention / CE_loss: CE만
+    patch_select='Attn',      # Attn / Rand / Saliency / Contiguous(로컬 확장)
+    attn_layer_idx=4,         # 위치 선택용 0-based 레이어: 4는 다섯 번째
+    train_attack_iters=250,   # 입력 이미지 최적화 반복 수
+    attack_lr=0.22, step_size=10, gamma=0.95, atten_loss_weight=0.002,
+    mild_l_inf=0.0,           # 0: 제한 없음. 양수: 정규화 공간 L∞ (std=.5이면 픽셀 예산의 2배)
+    clip_valid_range=True,    # 기본은 유효 픽셀 범위 [-1,1]. False: 로컬 unbounded 실험
+    sparse_pixel_num=0,       # 0: token 전체. 양수: 허용 영역 내 고정 무작위 RGB 픽셀 수
+    *, attention_source='incoming',  # incoming: 공식 위치 점수 / cls: 기존 로컬 CLS 점수
+    initialization='replacement',   # replacement: 무작위 픽셀 교체 / delta: 기존 작은 Gaussian 섭동
+    pcgrad_mode='projected',        # projected: 기존 norm² / official: 공식 저장소의 norm 분모
+    classification_forward=None,   # 적응형 평가 전용: 실제 방어 logits의 미분 가능한 forward
+    initial_delta=None,             # 적응형 평가 전용: 기존 공격본에서 시작할 섭동
+    candidate_callback=None,        # 후보 이미지와 목적 모델 logits를 기록 (기본 공격에는 영향 없음)
+    selected_patches=None,          # 적응형 재최적화: 원래 공격자가 선택했던 위치 고정 (B,num_patch)
 ):
+    """반환: (공격 이미지, 공격 전 full attention 목록). 모델 모드와 기존 grad는 보존한다.
+
+    기본: patch_fool_attack(model, images, labels, device)
+    무작위: patch_select='Rand' / gradient 위치: patch_select='Saliency'
+    다중 패치: num_patch=4 / CE만: attack_mode='CE_loss'
+    기존 로컬 기본 재현: attention_source='cls', initialization='delta', clip_valid_range=False
+    Mild/Sparse 단위·공식 코드와의 차이는 src/README.md 참고.
     """
-    Returns: adv_images (B,3,H,W), attn_weights (list, 시각화용)
-    """
-    model.eval()
-    images = images.clone().detach().to(device)
-    labels = labels.to(device)
-    B, C, H, W = images.shape
-
-    # ── 1. 공격 전 forward → attention 수집 ──────────────────────────────
-    attn_weights, hooks = _collect_attn(model)
-    with torch.no_grad():
-        model(images)
-    for h in hooks:
-        h.remove()
-
-    # ── 2. 패치 선택 ──────────────────────────────────────────────────────
-    num_patches = (H // patch_size_model) ** 2
-    if patch_select == 'Attn' and len(attn_weights) > attn_layer_idx:
-        max_patch_index = _select_patch_attn(
-            attn_weights, attn_layer_idx, num_patch, device)
-    elif patch_select == 'Contiguous' and len(attn_weights) > attn_layer_idx:
-        # num_patch 대신 ref_patch_size(16px)와 동일 면적을 덮는 인접 블록을 선택
-        max_patch_index = _select_contiguous_block(
-            attn_weights, attn_layer_idx, patch_size_model, H, device)
-    else:
-        max_patch_index = torch.from_numpy(
-            np.random.randint(0, num_patches, (B, num_patch))).to(device)
-
-    # ── 3. 공간 마스크 ────────────────────────────────────────────────────
-    mask = _build_mask(max_patch_index, B, H, patch_size_model, device)
-
-    # ── 4. delta 초기화 ───────────────────────────────────────────────────
-    # 논문: 정규화 공간에서 랜덤 init
-    # mild_l_inf=0 → unbounded (vanilla Patch-Fool)
-    if mild_l_inf == 0.0:
-        delta = torch.randn_like(images) * 0.1
-    else:
-        delta = (2 * mild_l_inf * torch.rand_like(images) - mild_l_inf)
-
-    original_images = images.clone()
-    delta = delta.to(device).requires_grad_(True)
-
-    opt       = torch.optim.Adam([delta], lr=attack_lr)
-    scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=step_size, gamma=gamma)
-    criterion = torch.nn.CrossEntropyLoss()
-
-    # attention loss용 index matrix (논문 코드 그대로)
-    seq_len = num_patches + 1                              # patches + CLS
-    mpim    = max_patch_index[:, 0].long()                 # (B,)
-    mpim    = mpim.unsqueeze(0).expand(seq_len, -1).T      # (B, seq)
-    mpim    = mpim.reshape(-1)                             # (B*seq,)
-
-    # ── 5. 공격 반복 ──────────────────────────────────────────────────────
-    for it in range(train_attack_iters):
-        model.zero_grad()
-        opt.zero_grad()
-
-        perturbed = original_images + torch.mul(delta, mask)
-
-        if attack_mode == 'Attention':
-            # attention 수집하면서 forward -- 미분 가능한 버전 필수(_collect_attn_grad).
-            # _collect_attn(선택용)은 no_grad+detach라 여기 쓰면 a_loss가 delta까지
-            # 이어지는 그래프 없이 만들어져서 torch.autograd.grad가 에러난다.
-            attn_iter, hooks_iter = _collect_attn_grad(model)
-            out = model(perturbed)
-            for h in hooks_iter:
-                h.remove()
+    with attack_context(model, device=device):
+        x = images.detach().clone().to(device)
+        y = labels.detach().to(device=device, dtype=torch.long)
+        if (x.ndim != 4 or not len(x) or x.shape[-2] != x.shape[-1]
+                or not torch.isfinite(x).all()):
+            raise ValueError('유한하고 비어 있지 않은 정사각 BCHW 입력이 필요합니다.')
+        batch, _, height, _ = x.shape
+        size = model.patch_embed.patch_size
+        size = (size, size) if isinstance(size, int) else tuple(size)
+        if (not isinstance(patch_size_model, int) or patch_size_model < 1
+                or size != (patch_size_model,)*2 or height % patch_size_model
+                or getattr(model, 'num_prefix_tokens', 1) != 1):
+            raise ValueError('모델 patch 크기/정사각 격자/CLS prefix 1개를 확인하세요.')
+        patches = (height // patch_size_model)**2
+        if (y.shape != (batch,) or patch_select not in ('Attn','Rand','Saliency','Contiguous')
+                or attack_mode not in ('Attention','CE_loss')):
+            raise ValueError('labels 또는 위치/공격 모드가 올바르지 않습니다.')
+        if pcgrad_mode not in ('projected','official'):
+            raise ValueError('pcgrad_mode는 projected 또는 official이어야 합니다.')
+        if attention_source not in ('incoming','cls') or initialization not in ('replacement','delta'):
+            raise ValueError('attention_source/initialization이 올바르지 않습니다.')
+        if (not isinstance(attn_layer_idx, int) or not 0 <= attn_layer_idx < len(model.blocks)
+                or not isinstance(num_patch, int) or not 1 <= num_patch <= patches):
+            raise ValueError('레이어 인덱스와 num_patch를 확인하세요.')
+        if (not isinstance(train_attack_iters, int) or train_attack_iters < 1 or not attack_lr > 0
+                or not isinstance(step_size, int) or step_size < 1 or not gamma > 0
+                or mild_l_inf < 0 or not isinstance(sparse_pixel_num, int) or sparse_pixel_num < 0):
+            raise ValueError('반복 수/스케줄/예산 파라미터가 올바르지 않습니다.')
+        if clip_valid_range and (x.min() < -1.00001 or x.max() > 1.00001):
+            raise ValueError('유효 범위 공격은 mean/std=.5로 정규화된 [-1,1] 입력이 필요합니다.')
+        selection_input = x.detach().requires_grad_(patch_select == 'Saliency')
+        with torch.set_grad_enabled(patch_select == 'Saliency'), attention_terms(model, _attention) as terms:
+            selection_logits = model(selection_input)
+        weights = [value.detach().cpu() for value in terms.values()]
+        selected = _select_patches(weights[attn_layer_idx].to(device), selection_logits, selection_input, y,
+                                   patch_size_model, num_patch, patch_select, attention_source)
+        if selected_patches is not None:
+            selected=torch.as_tensor(selected_patches,device=device)
+            if (selected.shape!=(batch,num_patch) or selected.dtype!=torch.long or
+                    not bool(((selected>=0)&(selected<patches)).all()) or
+                    any(len(row.unique())!=num_patch for row in selected)):
+                raise ValueError('selected_patches는 중복 없는 유효한 B×num_patch long 인덱스여야 합니다.')
+        grid = F.one_hot(selected, patches).sum(1).clamp_max(1).reshape(batch,1,height//patch_size_model,height//patch_size_model)
+        mask = grid.repeat_interleave(patch_size_model,2).repeat_interleave(patch_size_model,3).to(x.dtype)
+        if sparse_pixel_num:
+            sparse = torch.zeros_like(mask)
+            for i in range(batch):
+                allowed = mask[i].flatten().nonzero().flatten()
+                if sparse_pixel_num > len(allowed): raise ValueError('sparse_pixel_num이 허용 영역보다 큽니다.')
+                sparse[i].view(-1)[allowed[torch.randperm(len(allowed),device=device)[:sparse_pixel_num]]] = 1
+            mask = sparse
+        if initial_delta is not None:
+            delta=initial_delta.detach().clone().to(x)
+            if delta.shape!=x.shape or not bool(torch.isfinite(delta).all()):
+                raise ValueError('initial_delta는 입력과 같은 모양의 유한한 tensor여야 합니다.')
+            if mild_l_inf:delta.clamp_(-mild_l_inf,mild_l_inf)
+        elif mild_l_inf:
+            delta = (2*torch.rand_like(x)-1)*mild_l_inf
         else:
-            out = model(perturbed)
-
-        ce_loss = criterion(out, labels)
-
-        if attack_mode == 'Attention' and len(attn_iter) > 0:
-            grad = torch.autograd.grad(ce_loss, delta, retain_graph=True)[0]
-            ce_grad_flat = grad.view(B, -1).detach().clone()
-
-            for li in range(len(attn_iter) // 2):
-                if li == 0:
-                    continue
-                a = attn_iter[li].to(device).mean(dim=1)  # (B, N, N)
-                a = a.reshape(-1, a.size(-1))              # (B*N, N)
-                a = -torch.log(a.clamp(min=1e-8))
-                # CLS 토큰 +1 offset
-                a_loss = F.nll_loss(a, (mpim + 1).to(device))
-                a_grad = torch.autograd.grad(a_loss, delta, retain_graph=True)[0]
-                a_flat = a_grad.view(B, -1)
-                cos    = F.cosine_similarity(a_flat, ce_grad_flat, dim=1)
-                a_grad = _pcgrad(a_flat, ce_grad_flat, cos, grad.shape)
-                grad   = grad + a_grad * atten_loss_weight
-
-            opt.zero_grad()
+            delta = torch.rand_like(x)*2-1-x if initialization == 'replacement' else torch.randn_like(x)*.1
+        if clip_valid_range: delta = (x+delta).clamp(-1,1)-x
+        delta.requires_grad_(True)
+        optimizer = torch.optim.Adam([delta], lr=attack_lr)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=step_size,gamma=gamma)
+        target = (selected[:,0]+1)[:,None].expand(batch,patches+1).reshape(-1)
+        for _ in range(train_attack_iters):
+            optimizer.zero_grad()
+            context = attention_terms(model,_attention) if attack_mode == 'Attention' else nullcontext({})
+            with context as current:
+                logits = model(x+delta*mask)
+            if classification_forward is not None:
+                logits = classification_forward(x+delta*mask)
+            if candidate_callback is not None:
+                candidate_callback((x+delta*mask).detach(),logits.detach())
+            ce = F.cross_entropy(logits,y)
+            grad = torch.autograd.grad(ce,delta,retain_graph=bool(current))[0]
+            ce_grad = grad.flatten(1).detach().clone()
+            for layer in range(1,len(model.blocks)//2) if current else ():
+                a = current[layer].mean(1).reshape(-1,patches+1)
+                loss = a.clamp_min(1e-8).log().gather(1,target[:,None]).mean()
+                attention_grad = torch.autograd.grad(loss,delta,retain_graph=True)[0].flatten(1)
+                similarity = F.cosine_similarity(attention_grad,ce_grad,dim=1)
+                grad = grad + atten_loss_weight*_pcgrad(attention_grad,ce_grad,similarity,delta.shape,pcgrad_mode)
             delta.grad = -grad
-        else:
-            ce_loss.backward()
-            if delta.grad is not None:
-                delta.grad = -delta.grad
+            optimizer.step(); scheduler.step()
+            with torch.no_grad():
+                if mild_l_inf: delta.clamp_(-mild_l_inf,mild_l_inf)
+                if clip_valid_range: delta.copy_((x+delta).clamp(-1,1)-x)
+        result=(x+delta*mask).detach()
+        if candidate_callback is not None:
+            with torch.no_grad():
+                candidate_callback(result,(classification_forward or model)(result))
+        return result, weights
 
-        opt.step()
-        scheduler.step()
 
-        with torch.no_grad():
-            if mild_l_inf != 0.0:
-                delta.data = delta.data.clamp(-mild_l_inf, mild_l_inf)
-            if clip_valid_range:
-                delta.data = (original_images + delta.data).clamp(-1, 1) - original_images
-
-    # ── 6. 최종 adversarial image ─────────────────────────────────────────
-    with torch.no_grad():
-        adv_images = (original_images + torch.mul(delta, mask)).detach()
-
-    return adv_images, attn_weights
+def patch_fool_config(**overrides):
+    """실제로 쓰는 기본값까지 펼친 실행 설정. 새 결과의 재현 정보에 사용한다."""
+    import inspect
+    config = {name: parameter.default for name, parameter in inspect.signature(patch_fool_attack).parameters.items()
+              if parameter.default is not inspect.Parameter.empty and
+              name not in ('classification_forward','initial_delta','candidate_callback','selected_patches')}
+    unknown = set(overrides) - set(config)
+    if unknown:
+        raise ValueError(f'알 수 없는 PatchFool 옵션: {sorted(unknown)}')
+    config.update(overrides)
+    return config

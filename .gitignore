@@ -13,3 +13,8 @@ __pycache__/
 
 # Local, machine-specific Claude Code settings (not meant to be shared).
 .claude/
+
+# Generated experiment data (cohort images, attack/attention archives):
+# large, regenerable via the pipeline scripts, and includes raw ImageNet
+# JPEGs that should not be redistributed through this repo.
+data/
